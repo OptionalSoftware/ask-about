@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <!-- Rendered server-side. Slack, LinkedIn and the rest fetch this page
+         with no cookie, no token and no JavaScript, so an unfurl can only show
+         what is already in this HTML — the client-side fill-in below happens
+         far too late for them, and would leave "Ask about…" in every preview. -->
+    <title>{{.Title}}</title>
+    <meta name="description" content="{{.Description}}" />
+
+    <!-- Declared, because a browser with no icon link asks the domain root for
+         /favicon.ico — and ask-about deliberately serves nothing there. Without this
+         the 404 is someone else's, or nobody's. -->
+    <link rel="icon" href="/ask-about/favicon.svg" type="image/svg+xml" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="{{.Title}}" />
+    <meta property="og:title" content="{{.Title}}" />
+    <meta property="og:description" content="{{.Description}}" />
+    <meta property="og:url" content="{{.URL}}" />
+    {{if .Image}}
+    <!-- Absolute, and served without authentication: a crawler cannot follow a
+         relative path and will not be carrying credentials. -->
+    <meta property="og:image" content="{{.Image}}" />
+    <meta property="og:image:alt" content="{{.Title}}" />
+    {{end}}
+
+    <!-- summary rather than summary_large_image: a thumbnail beside the title
+         and description, which is the shape the page header already has. -->
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="{{.Title}}" />
+    <meta name="twitter:description" content="{{.Description}}" />
+    {{if .Image}}<meta name="twitter:image" content="{{.Image}}" />{{end}}
+
+    <!-- An invite link is meant for one person, so it should not turn up in a
+         search result. Unfurlers ignore this; crawlers honour it. -->
+    <meta name="robots" content="noindex, nofollow" />
+
+    <link rel="stylesheet" href="/ask-about/style.css" />
+  </head>
+  <body>
+    <div class="app">
+      <header class="header">
+        <div class="avatar-stack">
+          <canvas
+            id="avatar"
+            class="avatar"
+            hidden
+            role="button"
+            tabindex="0"
+            aria-label="Animated synthetic presenter. Activate to change the backdrop."
+          ></canvas>
+          <!-- Intro photograph, laid over the canvas and removed once it has
+               dissolved. Decorative: the synthetic avatar underneath carries
+               the accessible name. -->
+          <img id="avatar-photo" class="avatar-photo" alt="" hidden />
+        </div>
+        <div class="header-text">
+          <div class="brand">
+            <span class="dot" aria-hidden="true"></span>
+            <!-- Filled in here as well as by the client, so the page arrives
+                 saying the right thing rather than flashing a placeholder,
+                 and so a crawler reading the body finds the same text as the
+                 meta tags above. -->
+            <h1 id="title">{{.Title}}</h1>
+          </div>
+          <p id="tagline" class="tagline">{{.Description}}</p>
+        </div>
+      </header>
+
+      <!-- Wraps the scroll area so the pill can be anchored to the bottom of
+           it, rather than guessed at from the composer's height. -->
+      <div class="thread-wrap">
+      <main id="thread" class="thread" aria-live="polite" aria-label="Conversation">
+        <div class="empty" id="empty" hidden>
+          <p>Try one of these:</p>
+          <div class="suggestions" id="suggestions"></div>
+        </div>
+      </main>
+
+      <!-- Sits over the bottom of the thread rather than in the flow, so
+           showing it never reflows the text being read. Dots while the answer
+           is still arriving, an arrow once it has finished. -->
+      <button id="jump" class="jump" type="button" hidden
+              aria-label="Scroll to the latest">
+        <span class="jump-dots" aria-hidden="true"><span></span><span></span><span></span></span>
+        <svg class="jump-arrow" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+          <path d="M12 4v13m0 0 5-5m-5 5-5-5" fill="none"
+                stroke="currentColor" stroke-width="2"
+                stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+      </button>
+      </div>
+
+      <form id="composer" class="composer" autocomplete="off">
+        <textarea
+          id="input"
+          rows="1"
+          placeholder="Ask a question…"
+          aria-label="Your question"
+        ></textarea>
+        <button id="send" type="submit" aria-label="Send">
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+            <path
+              d="M3.4 20.4 21 12 3.4 3.6 3.4 10.2 15.6 12 3.4 13.8z"
+              fill="currentColor"
+            />
+          </svg>
+        </button>
+      </form>
+      <p id="disclaimer" class="disclaimer"></p>
+    </div>
+
+    <script type="module" src="/ask-about/app.js"></script>
+  </body>
+</html>

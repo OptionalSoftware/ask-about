@@ -1,0 +1,76 @@
+{{define "document.html"}}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>ask-about &middot; Your Document</title>
+{{template "styles"}}
+</head>
+<body>
+<main>
+  {{template "nav" "document"}}
+  <h1>Your Document</h1>
+
+  <p class="intro">
+    The document every answer comes from. Rather than write it cold, have an AI
+    interview you for it: copy the prompt {{if .Product}}for what you're
+    describing{{else}}for your level{{end}} into Claude, ChatGPT, or whatever you
+    use, attach what you already have, and answer its questions one at a time.
+    Say <code>done</code>, save what it prints as <code>private/content.md</code>,
+    and restart.
+  </p>
+
+  <div class="cards">
+  {{range .Prompts}}
+    <div class="card">
+      <h3>{{.Title}}</h3>
+      <p>{{.Blurb}}</p>
+      <div class="actions">
+        {{if .Text}}
+        <button type="button" class="copy-prompt">Copy Prompt</button>
+        <a href="/ask-about/admin/document/{{.Slug}}" target="_blank" rel="noopener">View</a>
+        {{else}}
+        <span class="fact">Not Included in This Build</span>
+        {{end}}
+      </div>
+      {{if .Text}}<textarea class="prompt-text" hidden readonly spellcheck="false">{{.Text}}</textarea>{{end}}
+    </div>
+  {{end}}
+  </div>
+
+  {{if not .Product}}
+  <p class="foot">Level, not discipline: a product manager and an engineer at the
+     same level use the same prompt.</p>
+  {{end}}
+</main>
+<script>
+  // Each card carries its prompt in a hidden textarea, so copying needs no
+  // request. When the clipboard is unavailable — plain HTTP, or a browser
+  // that refuses — the textarea is shown selected, and Cmd/Ctrl+C finishes
+  // the job.
+  document.addEventListener("click", (e) => {
+    const btn = e.target.closest(".copy-prompt");
+    if (!btn) return;
+    const box = btn.closest(".card").querySelector(".prompt-text");
+    const was = btn.textContent;
+    const reveal = () => {
+      box.hidden = false;
+      box.focus();
+      box.select();
+      btn.textContent = "Selected — Press Copy";
+    };
+    const copied = () => {
+      btn.textContent = "Copied";
+      setTimeout(() => { btn.textContent = was; }, 1500);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(box.value).then(copied, reveal);
+    } else {
+      reveal();
+    }
+  });
+</script>
+</body>
+</html>
+{{end}}

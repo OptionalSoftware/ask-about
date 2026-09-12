@@ -1,0 +1,18 @@
+# Holds the API key. Commit the config.example-*.toml files instead.
+config.toml
+
+# Build output
+/ask-about
+/ask-about-*
+
+# Local database
+/data/
+
+# macOS
+.DS_Store
+
+# Your own corpus, photo and anything else personal. Never committed.
+/private/
+
+# Claude Code's per-machine settings: local permissions and absolute paths.
+.claude/settings.local.json

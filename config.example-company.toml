@@ -1,0 +1,215 @@
+# ask-about — a company
+#
+# Answers questions about one subject from one document you control. This is
+# the example for a company. There is one per kind of subject:
+#
+#   config.example-person.toml     a person — a work history, more than a resume holds
+#   config.example-product.toml    a product or a service
+#   config.example-company.toml    a company, a team, an organization
+#
+#   cp config.example-company.toml config.toml && chmod 600 config.toml
+#
+# Read top to bottom. Part 1 is what the assistant is about and how it looks;
+# part 2 is where it runs and who may use it; part 3 is the model and what it
+# may cost. Parts 2 and 3 are identical in all three examples.
+
+##############################################################################
+# 1. WHAT IT IS ABOUT
+##############################################################################
+
+# What the corpus is about. Substituted into the persona and the page.
+[subject]
+# "product" covers a service, a company, an app — anything that is not a
+# person. It picks the built-in persona and defaults the pronouns to it/its.
+kind = "product"
+
+# One name. firstName and lastName are for a person; leave them empty.
+name = "Fennwick Harbor Engineering"
+firstName = ""
+lastName  = ""
+
+# How the persona refers to the subject. One of:
+#
+#   he/him    she/her    they/them    it/its
+#
+# Empty means it/its for a product.
+pronouns  = ""
+
+# Shown under the title. Never sent to the model.
+tagline   = "Structural and marine engineering for ports and bridges. Ask about services, projects, or working here."
+
+# Small print under the chat. Empty uses a short default. {{firstName}},
+# {{fullName}} and the pronouns above are substituted: {{they}}, {{them}},
+# {{their}}, {{theirs}}, {{themselves}}, and each capitalised ({{They}}) for
+# the start of a sentence. For a product {{firstName}} is the whole name.
+disclaimer = "Answers come from {{fullName}}'s own records. An LLM provides the interface."
+
+# Starter prompts. Empty uses generic ones. At most 6.
+questions = [
+  "What does the firm do?",
+  "Who owns it?",
+  "What is the graduate scheme like?",
+  "How do I get in touch about a project?",
+]
+
+# The document every answer comes from, and the instructions for answering.
+[corpus]
+# docs/company.md is a fictional firm, Fennwick Harbor Engineering, to try this with.
+# Your own belongs somewhere git never sees; private/ is gitignored for that.
+path    = "docs/company.md"
+
+# The system prompt. Empty uses the built-in persona for the subject's kind —
+# prompts/product.md, which is also compiled into the binary. Set a path to
+# use your own copy instead.
+persona = ""
+
+# The face on the page.
+[avatar]
+# A company shows a logo, not a face, so the synthetic presenter is off.
+# Set true for the synthetic presenter instead, with the photo as its intro.
+enabled = false
+
+# Backdrop behind the synthetic presenter, if enabled. See web/backgrounds.js.
+background = "maxheadroom"   # maxheadroom | matrix | holodeck | cylinder | scanlines | none
+
+# With the presenter off this image is shown plainly and stays: the logo.
+# The shipped file is a placeholder android head; point this at your own.
+photo = "docs/avatar.png"
+
+# What a link unfurls into in Slack, LinkedIn and the rest. Crawlers arrive
+# with no cookie and no JavaScript, so this is rendered into the page itself
+# and the image is served without authentication.
+[preview]
+# Both default to the [subject] name and tagline.
+title = ""
+description = ""
+
+# Thumbnail, served at /ask-about/preview.jpg. Defaults to avatar.photo. Raster
+# only — most unfurlers ignore SVG.
+image = ""
+
+##############################################################################
+# 2. WHERE IT RUNS, AND WHO MAY USE IT
+##############################################################################
+
+[server]
+addr = ":8283"
+
+[storage]
+# SQLite file. Empty runs the chat with nothing recorded. The admin pages,
+# invite links and spend caps below all read from it, so setting any of them
+# with this empty is refused at startup rather than half-working.
+# Nothing is ever pruned — questions, answers and token counts are kept
+# indefinitely.
+path = "data/ask-about.db"
+
+# The invite pages at /ask-about/admin. Requires [storage] and both fields below.
+# Setting only some of them fails at startup rather than half-working.
+#
+# Credentials go over HTTP Basic, so put this behind TLS.
+[admin]
+username = ""
+password = ""
+
+# Optional: only this address may reach /ask-about/admin, checked before the
+# password. Takes a single address or a CIDR block:
+#
+#   ip = "203.0.113.5"
+#   ip = "203.0.113.0/24"
+#
+# Reads X-Forwarded-For, so it works behind a proxy as well as directly. One
+# of three things a request must get right, not a boundary on its own. A
+# refusal logs the address it decided on, which tells you what to put here.
+ip = ""
+
+# Wrong passwords an address may try before it is refused for 15 minutes.
+# Counted per address, so someone guessing cannot lock you out of your own
+# admin pages, and a success clears the count. 0 disables it.
+max_attempts = 3
+
+# Who may ask questions, and how much they may spend. Only asking is gated —
+# the page is always served, so link previews still work for someone without
+# a link.
+[access]
+# Off by default: a fresh deploy is an open demo rather than a locked door
+# with no way in. Turning it on needs [storage].
+invite_only = false
+
+# Shown when a link has stopped working. Empty uses a default that stays vague
+# about whether it expired, was revoked or was never real — all three mean
+# someone is holding a token, and naming which narrows a guess.
+message = ""
+
+# Shown to someone who finds the URL with no link at all. This is the front
+# door — for most people it is the only thing the site ever says — so write
+# your own. {{firstName}}, {{lastName}}, {{fullName}} and the pronoun
+# placeholders listed under [subject] are substituted.
+#
+#   no_link_message = "Ten years of engineering leadership, answerable in plain
+#   English. Access is by invitation — get in touch with {{firstName}}."
+no_link_message = ""
+
+# Spend caps in dollars. Set BOTH to 0 for unlimited — zero is the switch, not
+# a large number. Either one set needs [storage] and real [pricing] rates in
+# part 3, or startup fails rather than running a cap that never trips.
+#
+# For scale: a 10-question visit costs about $0.33. A slow reader can reach
+# ~$1.20, because the prompt cache expires after five minutes and gets paid
+# for again.
+max_cost_per_session = 1.50
+
+# Totals every visitor together, so hitting it stops answers for everyone
+# until local midnight. The backstop, not the everyday control.
+max_cost_per_day = 10.00
+
+# Shown when a cap is hit. Empty uses defaults.
+session_cap_message = ""
+day_cap_message = ""
+
+##############################################################################
+# 3. THE MODEL, AND WHAT IT COSTS
+##############################################################################
+
+[llm]
+vendor     = "anthropic"        # anthropic | openai | bedrock
+model      = "claude-sonnet-5"  # needs a matching [pricing] block below
+api_key    = ""                 # <- your key goes here
+max_tokens = 2048
+effort     = "low"              # anthropic only: low | medium | high | xhigh | max
+
+# Optional: uncomment to read the key from an environment variable instead.
+# Only used when api_key above is empty.
+# api_key_env = "ANTHROPIC_API_KEY"
+
+# base_url makes vendor = "openai" cover any OpenAI-compatible API:
+#
+#   https://api.x.ai/v1              Grok
+#   https://api.groq.com/openai/v1   Groq
+#   http://localhost:11434/v1        Ollama
+#
+# For vendor = "bedrock" it is the regional runtime host, e.g.
+# https://bedrock-runtime.us-west-2.amazonaws.com
+base_url = ""
+
+# Dollars per million tokens, from
+# https://platform.claude.com/docs/en/about-claude/pricing (fetched 3 Aug 2026).
+# The model set in [llm] must have a block here, or the spend caps in part 2
+# cannot work.
+#
+# Four numbers because they price differently: cache reads are a tenth of
+# input, and cache WRITES cost more than input.
+#
+# These are the standard rates from 1 September 2026. Introductory Sonnet 5
+# pricing runs to 31 August, so until then the real bill is lower than the
+# admin pages show.
+[pricing."claude-sonnet-5"]
+input       = 3.00
+cache_read  = 0.30
+cache_write = 3.75
+output      = 15.00
+
+[pricing."claude-opus-5"]
+input       = 5.00
+cache_read  = 0.50
+cache_write = 6.25
+output      = 25.00

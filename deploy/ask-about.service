@@ -1,0 +1,63 @@
+# systemd unit for ask-about. Copy to /etc/systemd/system/ask-about.service.
+#
+# Paths assume /srv/ask-about. Change WorkingDirectory and ExecStart together if you
+# put it somewhere else — and mind that WorkingDirectory is load-bearing, not
+# tidiness: corpus.path, corpus.persona, storage.path and avatar.photo are all
+# relative paths in config.toml, resolved from wherever the process starts.
+
+[Unit]
+Description=ask-about
+Documentation=https://github.com/optionalsoftware/ask-about
+# network-online rather than network: the listen would otherwise race the
+# interface coming up on a slow boot.
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+User=ask-about
+Group=ask-about
+WorkingDirectory=/srv/ask-about
+ExecStart=/srv/ask-about/ask-about -config /srv/ask-about/config.toml
+
+# Restart on anything: a crash, an OOM kill, a panic. Not on `systemctl stop`.
+#
+# Five seconds is long enough that a config it cannot start with retries a few
+# times a minute rather than spinning, and short enough that a real crash is
+# back before anyone reloads. It retries indefinitely either way, so a service
+# that will not come up shows as a repeating start in the journal rather than
+# as a unit that quietly gave up.
+Restart=always
+RestartSec=5
+
+# SIGTERM is handled: it stops accepting, then gives in-flight answers ten
+# seconds to finish. A visitor mid-answer keeps their answer.
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+# Logs go to stdout and land in the journal:  journalctl -u ask-about -f
+StandardOutput=journal
+StandardError=journal
+
+# The database is the only thing it writes. Everything else on the filesystem
+# is read-only to this process, including the rest of /srv/ask-about.
+ProtectSystem=strict
+ReadWritePaths=/srv/ask-about/data
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+
+NoNewPrivileges=true
+RestrictNamespaces=true
+RestrictSUIDSGID=true
+LockPersonality=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+# Not just the two you would expect: AF_UNIX is the journal socket, and Go's
+# resolver reaches for AF_NETLINK when it works out which stacks the host has.
+# Dropping either trades a diagnosable failure for a baffling one — no logs, or
+# no DNS.
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+
+[Install]
+WantedBy=multi-user.target

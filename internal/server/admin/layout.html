@@ -1,0 +1,226 @@
+{{define "styles"}}
+<!-- Here rather than in each page: both admin pages pull this in inside their
+     head, and without it the browser goes asking the domain root for
+     /favicon.ico, which ask-about does not serve. -->
+<link rel="icon" href="/ask-about/favicon.svg" type="image/svg+xml" />
+<style>
+  :root {
+    --bg: #0d1117; --panel: #161b22; --sunk: #0b0f15; --line: #30363d;
+    --ink: #e6edf3; --dim: #8b949e; --accent: #58a6ff;
+    --good: #3fb950; --warn: #d29922; --bad: #f85149;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 2rem 1.25rem; background: var(--bg); color: var(--ink);
+    font: 15px/1.5 ui-sans-serif, -apple-system, "Segoe UI", sans-serif;
+  }
+  main { max-width: 62rem; margin: 0 auto; }
+  a { color: var(--accent); }
+  h1 { font-size: 1.25rem; margin: 0 0 1.5rem; font-weight: 600; }
+  h1 .muted { color: var(--dim); font-weight: 400; }
+  h2 { font-size: .8rem; text-transform: uppercase; letter-spacing: .06em;
+       color: var(--dim); margin: 0 0 1rem; font-weight: 600; }
+  section {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 8px; padding: 1.25rem; margin-bottom: 1.25rem;
+  }
+  .back { display: inline-block; margin-bottom: 1rem; font-size: .85rem; }
+
+  /* Form */
+  form.new { display: flex; flex-wrap: wrap; gap: .75rem; align-items: flex-end; }
+  label { display: flex; flex-direction: column; gap: .35rem;
+          font-size: .75rem; color: var(--dim); }
+  /* One flex item, or the hint becomes its own row and the fields stop
+     lining up with each other. */
+  label > .cap { display: block; white-space: nowrap; }
+  input {
+    background: var(--sunk); border: 1px solid var(--line); border-radius: 6px;
+    color: var(--ink); padding: .5rem .6rem; font: inherit; font-size: .875rem;
+  }
+  input:focus { outline: 2px solid var(--accent); outline-offset: -1px;
+                border-color: transparent; }
+  button {
+    background: var(--accent); color: #04101f; border: 0; border-radius: 6px;
+    padding: .55rem 1rem; font: inherit; font-weight: 600; cursor: pointer;
+  }
+  button.link { background: none; color: var(--bad); font-weight: 400;
+                padding: 0; font-size: .8rem; text-decoration: underline; }
+
+  /* The per-link edit form. The note takes up the slack, so the date box and
+     the button keep the size they need. Growing the label rather than the
+     input, because the input is inside a column flex container and growing it
+     there makes it taller instead of wider. */
+  form.edit { margin-top: .35rem; }
+  form.edit .grow { flex: 1 1 18rem; }
+  form.edit .grow input { width: 100%; }
+  .saved { font-size: .8rem; color: var(--good); padding-bottom: .55rem; }
+
+  .issued { border-color: var(--good); }
+  .issued p { margin: 0 0 .6rem; color: var(--dim); font-size: .85rem; }
+  .issued code {
+    display: block; padding: .75rem; background: var(--sunk); border-radius: 6px;
+    border: 1px solid var(--line); font-size: .875rem; word-break: break-all;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--good);
+  }
+  .error { border-color: var(--bad); color: var(--bad); }
+
+  /* Spend */
+  .spend.near { border-color: var(--warn); }
+  .spend-head { display: flex; flex-wrap: wrap; gap: .5rem 1.5rem;
+                align-items: flex-start; justify-content: space-between; }
+  .spend-now { font-size: 1.6rem; font-weight: 600;
+               font-variant-numeric: tabular-nums; line-height: 1.2; }
+  .spend-now .of { font-size: .9rem; font-weight: 400; color: var(--dim); }
+  .warn { color: var(--warn); font-size: .8rem; margin: 0; max-width: 34ch; }
+
+  .meter {
+    height: 6px; background: var(--sunk); border-radius: 999px;
+    overflow: hidden; margin: .9rem 0 0;
+  }
+  .meter span { display: block; height: 100%; background: var(--good); }
+  .spend.near .meter span { background: var(--warn); }
+
+  /* Bars are scaled to the busiest day rather than to the cap, so a quiet
+     fortnight still shows its own shape instead of a flat line. */
+  .bars {
+    display: flex; align-items: flex-end; gap: .35rem;
+    height: 3.5rem; margin-top: 1rem;
+  }
+  .bar { flex: 1 1 0; display: flex; flex-direction: column;
+         justify-content: flex-end; height: 100%; min-width: 0; }
+  .bar > span {
+    display: block; width: 100%; background: var(--line);
+    border-radius: 2px 2px 0 0; min-height: 2px;
+  }
+  .bar.is-today > span { background: var(--accent); }
+  .bar em {
+    font-style: normal; font-size: .6rem; color: var(--dim);
+    text-align: center; margin-top: .3rem; white-space: nowrap;
+    overflow: hidden; text-overflow: clip;
+  }
+  /* Only the ends and today keep a label at narrow widths; fourteen of them
+     would overlap into noise. */
+  .bar:not(:first-child):not(:last-child):not(.is-today) em { visibility: hidden; }
+
+  /* Search */
+  .search form { display: flex; gap: .75rem; align-items: flex-end; }
+  /* The flex goes on the label, not the input. label is a column flex
+     container, so flex-grow on the input grows it downwards. */
+  .search label { flex: 1 1 20rem; }
+  .search input[type="search"] { width: 100%; }
+  .search a.fact { align-self: center; padding-bottom: .55rem; }
+
+  .match { padding: .8rem 0; border-bottom: 1px solid var(--line); }
+  .match:last-child { border-bottom: 0; padding-bottom: 0; }
+  .match-head {
+    display: flex; flex-wrap: wrap; gap: .4rem 1rem;
+    align-items: baseline; justify-content: space-between; margin-bottom: .4rem;
+  }
+  .match .q { font-weight: 600; }
+  .match .a {
+    color: var(--dim); font-size: .85rem; margin-top: .3rem;
+    /* Answers run long; enough to recognise the one you want, then open it. */
+    display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  /* The link itself, on its own line under each row so a long URL has room
+     and does not squeeze the counts beside it. */
+  .link-url { padding: 0 0 .85rem; }
+  .link-url code {
+    display: inline-block; max-width: 100%;
+    padding: .35rem .55rem; border: 1px solid var(--line); border-radius: 6px;
+    background: var(--sunk); color: var(--dim);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: .78rem; word-break: break-all; cursor: pointer;
+  }
+  .link-url code:hover { color: var(--ink); border-color: var(--accent); }
+  code.copied { color: var(--good); border-color: var(--good); }
+
+  /* Contact */
+  .contact-head {
+    display: flex; flex-wrap: wrap; gap: .5rem 1rem;
+    align-items: baseline; justify-content: space-between;
+    padding-bottom: .85rem; border-bottom: 1px solid var(--line);
+  }
+  .contact-name { font-size: 1.05rem; font-weight: 600; }
+  .totals { display: flex; flex-wrap: wrap; gap: 1rem;
+            font-size: .8rem; color: var(--dim); }
+  .totals b { color: var(--ink); font-weight: 600;
+              font-variant-numeric: tabular-nums; }
+
+  /* One link. A wrapping flex row rather than a table cell, so narrow
+     screens reflow instead of needing a sideways drag. */
+  .link-row {
+    display: flex; flex-wrap: wrap; gap: .5rem 1.1rem; align-items: baseline;
+    padding: .85rem 0; border-bottom: 1px solid var(--line);
+  }
+  .link-row:last-child { border-bottom: 0; padding-bottom: 0; }
+  .link-row .grow { flex: 1 1 8rem; }
+  .fact { font-size: .8rem; color: var(--dim); white-space: nowrap; }
+  .fact b { color: var(--ink); font-weight: 600;
+            font-variant-numeric: tabular-nums; }
+  .note { font-size: .8rem; color: var(--dim); font-style: italic; }
+
+  .tag {
+    display: inline-block; padding: .1rem .45rem; border-radius: 999px;
+    font-size: .7rem; font-weight: 600; text-transform: uppercase;
+    letter-spacing: .04em; border: 1px solid currentColor; white-space: nowrap;
+  }
+  .active  { color: var(--good); }
+  .unused  { color: var(--dim); }
+  .expired { color: var(--warn); }
+  .revoked { color: var(--bad); }
+  .empty { color: var(--dim); padding: 1rem 0; margin: 0; }
+
+  /* Visits */
+  .visit { border: 1px solid var(--line); border-radius: 8px;
+           padding: .9rem 1rem; margin-bottom: .85rem; }
+  .visit-head {
+    display: flex; flex-wrap: wrap; gap: .4rem 1rem;
+    align-items: baseline; justify-content: space-between;
+    margin-bottom: .75rem;
+  }
+  .visit-when { font-weight: 600; font-size: .95rem; }
+  .qa { padding: .6rem 0; border-top: 1px solid var(--line); }
+  .qa .q { display: flex; gap: .6rem; align-items: baseline; }
+  .qa .at { color: var(--dim); font-size: .75rem; flex: none;
+            font-variant-numeric: tabular-nums; }
+  .qa .a { color: var(--dim); font-size: .85rem; margin-top: .3rem;
+           padding-left: 3.1rem; white-space: pre-wrap; }
+  .qa .failed { color: var(--bad); }
+
+  @media (max-width: 32rem) {
+    body { padding: 1.25rem .75rem; }
+    section { padding: 1rem; }
+    form.new { flex-direction: column; align-items: stretch; }
+    label { width: 100%; }
+    input { width: 100% !important; }
+    button[type="submit"] { width: 100%; padding: .7rem; }
+    .qa .a { padding-left: 0; }
+  }
+</style>
+{{end}}
+
+{{define "copy"}}
+<script>
+  // Click a link to copy it. Falls back to selecting the text when the
+  // clipboard is unavailable, which is the case over plain HTTP.
+  document.addEventListener("click", (e) => {
+    const el = e.target.closest(".copyable");
+    if (!el) return;
+    const link = el.dataset.link;
+    const done = () => {
+      const was = el.textContent;
+      el.textContent = "copied";
+      el.classList.add("copied");
+      setTimeout(() => { el.textContent = was; el.classList.remove("copied"); }, 900);
+    };
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(link).then(done, () => getSelection().selectAllChildren(el));
+    } else {
+      getSelection().selectAllChildren(el);
+    }
+  });
+</script>
+{{end}}

@@ -1,0 +1,174 @@
+{{define "list.html"}}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>ask-about &middot; links</title>
+{{template "styles"}}
+</head>
+<body>
+<main>
+  <h1>Links <span class="muted">&middot; ask-about</span></h1>
+
+  {{if .Error}}
+    <section class="error"><strong>{{.Error}}</strong></section>
+  {{end}}
+
+  {{if .Issued}}
+    <section class="issued">
+      <h2>Link created</h2>
+      <p>Also listed below, so you can send it again later.</p>
+      <code class="copyable" data-link="{{.Issued}}" title="Click to copy">{{.Issued}}</code>
+    </section>
+  {{end}}
+
+  {{with .Spend}}
+  <section class="spend {{if .Near}}near{{end}}">
+    <div class="spend-head">
+      <div>
+        <h2>Today</h2>
+        <div class="spend-now">
+          {{if $.Spend.Priced}}{{money .Today}}{{else}}<span class="sub">no rates</span>{{end}}
+          {{if gt .Cap 0.0}}<span class="of">of {{money .Cap}}</span>{{end}}
+        </div>
+      </div>
+      {{if .Near}}
+      <!-- Said plainly: the daily cap closes the site to everyone at once,
+           including someone mid-conversation, so it is worth seeing coming. -->
+      <p class="warn">Close to the daily cap. Reaching it stops answers for
+         everyone until local midnight.</p>
+      {{end}}
+    </div>
+
+    {{if gt .Cap 0.0}}
+    <div class="meter" role="img"
+         aria-label="{{pct .CapPct}} percent of today's spend limit used">
+      <span style="width:{{pct .CapPct}}%"></span>
+    </div>
+    {{end}}
+
+    <div class="bars">
+      {{range .Days}}
+      <div class="bar {{if .Today}}is-today{{end}}" title="{{day .Day}} — {{money .Cost}}">
+        <span style="height:{{pct .Pct}}%"></span>
+        <em>{{day .Day}}</em>
+      </div>
+      {{end}}
+    </div>
+  </section>
+  {{end}}
+
+  <section class="search">
+    <form method="get" action="/ask-about/admin">
+      <label><span class="cap">Search questions</span>
+        <input type="search" name="q" value="{{.Query}}" autocomplete="off"
+               placeholder="a word from a question or an answer" size="34">
+      </label>
+      <button type="submit">Search</button>
+      {{if .Searched}}<a class="fact" href="/ask-about/admin">clear</a>{{end}}
+    </form>
+  </section>
+
+  {{if .Searched}}
+  <section>
+    <h2>{{comma (len .Matches)}} match{{if ne (len .Matches) 1}}es{{end}} for &ldquo;{{.Query}}&rdquo;</h2>
+    {{if .Matches}}
+      {{range .Matches}}
+      <div class="match">
+        <div class="match-head">
+          <span class="who">{{if .ContactName}}{{.ContactName}}{{else}}no link{{end}}</span>
+          <span class="fact">{{stamp .AskedAt}}</span>
+        </div>
+        <div class="q">{{.Question}}</div>
+        <div class="a">{{.Answer}}</div>
+      </div>
+      {{end}}
+    {{else}}
+      <p class="empty">Nothing matched.</p>
+    {{end}}
+  </section>
+  {{end}}
+
+  <section>
+    <h2>New link</h2>
+    <form class="new" method="post" action="/ask-about/admin/links">
+      <label><span class="cap">Name</span>
+        <input type="text" name="name" required autocomplete="off" list="known-names"
+               placeholder="Acme Corp, or dana@example.com" size="28">
+      </label>
+      <label><span class="cap">Note <span class="sub">(private)</span></span>
+        <input type="text" name="note" autocomplete="off"
+               placeholder="Staff eng, applied 12 Mar" size="26">
+      </label>
+      <label><span class="cap">Expires <span class="sub">(days, blank for never)</span></span>
+        <input type="number" name="days" min="1" placeholder="never" style="width:8rem">
+      </label>
+      <button type="submit">Create</button>
+    </form>
+    <!-- Suggesting names already on file is what keeps a replacement link
+         under the same contact instead of starting a second entry. -->
+    <datalist id="known-names">
+      {{range .Names}}<option value="{{.}}"></option>{{end}}
+    </datalist>
+  </section>
+
+  {{if .Contacts}}
+    {{range .Contacts}}
+    <section>
+      <div class="contact-head">
+        <span class="contact-name">{{.Name}}</span>
+        <span class="totals">
+          <span><b>{{comma .Sessions}}</b> visit{{if ne .Sessions 1}}s{{end}}</span>
+          <span><b>{{comma .Turns}}</b> question{{if ne .Turns 1}}s{{end}}</span>
+          <span>{{if .Priced}}<b>{{money .Cost}}</b>{{else}}no rates{{end}}</span>
+          {{if .LastSeen.IsZero}}<span>never used</span>
+          {{else}}<span>last seen <b>{{date .LastSeen}}</b></span>{{end}}
+        </span>
+      </div>
+
+      {{range .Links}}
+      <div class="link-row">
+        <span class="tag {{.Status}}">{{.Status}}</span>
+        <span class="grow">
+          {{if .Note}}<span class="note">{{.Note}}</span>
+          {{else}}<span class="note">created {{date .CreatedAt}}</span>{{end}}
+        </span>
+        <span class="fact"><b>{{comma .Sessions}}</b> visit{{if ne .Sessions 1}}s{{end}}</span>
+        <span class="fact"><b>{{comma .Turns}}</b> question{{if ne .Turns 1}}s{{end}}</span>
+        <span class="fact">{{if .Priced}}<b>{{money .Cost}}</b>{{else}}no rates{{end}}</span>
+        <span class="fact">
+          {{if .ExpiresAt}}expires {{date .ExpiresAt}}{{else}}no expiry{{end}}
+        </span>
+        <!-- "edit" rather than "open" or "visits": next to a URL, "open"
+             reads as opening that URL, and "visits" hides the fact that the
+             note and expiry are changeable at all. -->
+        <a class="fact" href="/ask-about/admin/links/{{.ID}}">edit &rarr;</a>
+        {{if ne .Status "revoked"}}
+        <form method="post" action="/ask-about/admin/links/revoke"
+              onsubmit="return confirm('Revoke this link for {{.Name}}? It stops working immediately.')">
+          <input type="hidden" name="id" value="{{.ID}}">
+          <button class="link" type="submit">revoke</button>
+        </form>
+        {{end}}
+      </div>
+      {{if .URL}}
+      <div class="link-url">
+        <code class="copyable" data-link="{{.URL}}" title="Click to copy">{{.URL}}</code>
+      </div>
+      {{else}}
+      <div class="link-url"><span class="fact">
+        Created before links were stored &mdash; make a new one to get a URL.
+      </span></div>
+      {{end}}
+      {{end}}
+    </section>
+    {{end}}
+  {{else}}
+    <section><p class="empty">No links yet.</p></section>
+  {{end}}
+</main>
+{{template "copy"}}
+</body>
+</html>
+{{end}}

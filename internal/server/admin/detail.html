@@ -1,0 +1,94 @@
+{{define "detail.html"}}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>ask-about &middot; {{.Name}}</title>
+{{template "styles"}}
+</head>
+<body>
+<main>
+  <a class="back" href="/ask-about/admin">&larr; all links</a>
+  <h1>{{.Name}} <span class="muted">&middot; link</span></h1>
+
+  {{if .Error}}
+    <section class="error"><strong>{{.Error}}</strong></section>
+  {{end}}
+
+  <section>
+    <div class="contact-head">
+      <span>
+        <span class="tag {{.Link.Status}}">{{.Link.Status}}</span>
+      </span>
+      <span class="totals">
+        <span><b>{{comma .Link.Sessions}}</b> visit{{if ne .Link.Sessions 1}}s{{end}}</span>
+        <span><b>{{comma .Link.Turns}}</b> question{{if ne .Link.Turns 1}}s{{end}}</span>
+        <span>{{if .Link.Priced}}<b>{{money .Link.Cost}}</b>{{else}}no rates{{end}}</span>
+        <span>created <b>{{date .Link.CreatedAt}}</b></span>
+      </span>
+    </div>
+
+    {{if .Link.URL}}
+    <div class="link-url">
+      <code class="copyable" data-link="{{.Link.URL}}" title="Click to copy">{{.Link.URL}}</code>
+    </div>
+    {{end}}
+
+    <form class="new edit" method="post" action="/ask-about/admin/links/{{.Link.ID}}">
+      <label class="grow"><span class="cap">Note <span class="sub">(private)</span></span>
+        <input type="text" name="note" value="{{.Link.Note}}" autocomplete="off"
+               placeholder="Staff eng, applied 12 Mar">
+      </label>
+      <label><span class="cap">Expires <span class="sub">(blank for never)</span></span>
+        <input type="date" name="expires" value="{{isodate .Link.ExpiresAt}}">
+      </label>
+      <button type="submit">Save</button>
+      {{if .Saved}}<span class="saved">saved</span>{{end}}
+    </form>
+  </section>
+
+  <section>
+    <h2>Visits</h2>
+    {{if .Sessions}}
+      {{range .Sessions}}
+      <div class="visit">
+        <div class="visit-head">
+          <span class="visit-when">{{stamp .Started}}</span>
+          <span class="totals">
+            <span><b>{{comma (len .Turns)}}</b> question{{if ne (len .Turns) 1}}s{{end}}</span>
+            <span>{{if .Priced}}<b>{{money .Cost}}</b>{{else}}no rates{{end}}</span>
+            <span><b>{{comma .Usage.OutputTokens}}</b> out</span>
+            <span><b>{{comma .Usage.CacheReadTokens}}</b> cached</span>
+            {{/* Shown only when non-zero, because a cache write costs more
+                 than uncached input and is otherwise invisible — it is what
+                 the first visitor after a quiet spell pays. */}}
+            {{if .Usage.CacheWriteTokens}}
+            <span><b>{{comma .Usage.CacheWriteTokens}}</b> written</span>
+            {{end}}
+          </span>
+        </div>
+        {{range .Turns}}
+        <div class="qa">
+          <div class="q">
+            <span class="at">{{clock .AskedAt}}</span>
+            <span>{{.Question}}</span>
+          </div>
+          {{if .Err}}
+            <div class="a failed">failed: {{.Err}}</div>
+          {{else}}
+            <div class="a">{{.Answer}}</div>
+          {{end}}
+        </div>
+        {{end}}
+      </div>
+      {{end}}
+    {{else}}
+      <p class="empty">This link has not been used yet.</p>
+    {{end}}
+  </section>
+</main>
+{{template "copy"}}
+</body>
+</html>
+{{end}}

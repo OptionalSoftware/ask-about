@@ -1,0 +1,617 @@
+:root {
+  --bg: #fbfbfa;
+  --surface: #ffffff;
+  --text: #1a1a18;
+  --muted: #6b6b64;
+  --border: #e5e4e0;
+  --accent: #2f6f5e;
+  --accent-soft: #eaf2ef;
+  --user-bg: #2f6f5e;
+  --user-text: #ffffff;
+  --radius: 14px;
+  --font: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    Helvetica, Arial, sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #14150f;
+    --surface: #1c1d17;
+    --text: #ecebe4;
+    --muted: #9b9a90;
+    --border: #2e2f27;
+    --accent: #6fbfa4;
+    --accent-soft: #1f2b26;
+    --user-bg: #2c5f52;
+    --user-text: #f2fbf7;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 16px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+.app {
+  max-width: 46rem;
+  margin: 0 auto;
+  padding: 2rem 1.25rem 1.25rem;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+/* Header ------------------------------------------------------------- */
+
+.header {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.header-text {
+  min-width: 0;
+}
+
+/* The avatar is hidden until the client confirms it's enabled in config. */
+.avatar {
+  flex: none;
+  width: 96px;
+  height: 96px;
+  display: block;
+  cursor: pointer; /* it cycles the backdrop on activation */
+  border-radius: 6px;
+}
+
+.avatar:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* The photo sits directly over the canvas, same box, and is removed from the
+   DOM once its animation ends. */
+.avatar-stack {
+  position: relative;
+  flex: none;
+  /* Clips the intro's zoom. Without this the photo scales past the avatar's
+     box and spills into the header text beside it. */
+  overflow: hidden;
+  border-radius: 6px;
+}
+
+.avatar-photo {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 6px;
+  pointer-events: none; /* never intercept the canvas's click */
+  transform-origin: 50% 38%; /* push in toward the face, not the shoulders */
+
+  /* Two tracks, because the zoom and the flicker want opposite timing
+     functions. A stepped zoom would judder; an eased flicker reads as a
+     dissolve rather than a signal cutting out. Splitting them lets each
+     interpolate the way it should over the same duration. */
+  animation:
+    avatar-zoom 5s cubic-bezier(0.25, 0.6, 0.3, 1) forwards,
+    avatar-flicker 5s steps(1, end) forwards;
+}
+
+.avatar-photo[hidden] {
+  display: none;
+}
+
+/* With avatar.enabled = false the photograph IS the avatar, not an intro to
+   one. Two things change.
+   
+   The animation goes: it would dissolve the photo away and leave an empty box,
+   since there is no canvas behind it to reveal.
+   
+   And it comes out of absolute positioning to sit in the flow. The stack takes
+   its size from the canvas, which stays hidden here — an absolutely positioned
+   photo would have a zero-sized box to fill and render as nothing. */
+.avatar-photo.still {
+  animation: none;
+  transform: none;
+  opacity: 1;
+  position: static;
+  width: 96px;
+  height: 96px;
+}
+
+@media (max-width: 30rem) {
+  .avatar-photo.still {
+    width: 68px;
+    height: 68px;
+  }
+}
+
+/* Slow, continuous push-in. Runs the whole length, under everything else. */
+@keyframes avatar-zoom {
+  from {
+    transform: scale(1);
+    filter: none;
+  }
+  51% {
+    filter: none; /* blur begins with the dissolve, not before it */
+  }
+  to {
+    transform: scale(1.3);
+    filter: blur(4px) saturate(0.4);
+  }
+}
+
+/* Flicker twice, hold clean, flicker twice, then dissolve. The steady middle is
+   what makes the second burst land — without it the whole thing is just noise.
+   Percentages are of 5s, so the closing dissolve runs about 2.4 seconds. */
+@keyframes avatar-flicker {
+  0%,
+  20% {
+    opacity: 1;
+  }
+
+  /* First burst — each dip holds 100ms */
+  21% {
+    opacity: 0.08;
+  }
+  23% {
+    opacity: 1;
+  }
+  25% {
+    opacity: 0.05;
+  }
+  27% {
+    opacity: 1;
+  }
+
+  /* Deliberately quiet — no keyframes between 27% and 45%, ~900ms */
+
+  /* Second burst */
+  45% {
+    opacity: 0.07;
+  }
+  47% {
+    opacity: 1;
+  }
+  49% {
+    opacity: 0.04;
+  }
+  51% {
+    opacity: 1;
+    /* Only this leg interpolates; everything above snaps. */
+    animation-timing-function: ease-in-out;
+  }
+
+  100% {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* No zoom and no flicker, but the dissolve itself is just an opacity change
+     and stays at full length — nothing here is vestibular. */
+  .avatar-photo {
+    animation: avatar-intro-reduced 3.2s linear forwards;
+  }
+
+  @keyframes avatar-intro-reduced {
+    0%,
+    38% {
+      opacity: 1;
+    }
+    100% {
+      opacity: 0;
+    }
+  }
+}
+
+.avatar[hidden] {
+  display: none;
+}
+
+@media (max-width: 30rem) {
+  .avatar {
+    width: 68px;
+    height: 68px;
+  }
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.dot {
+  width: 0.65rem;
+  height: 0.65rem;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 4px var(--accent-soft);
+}
+
+h1 {
+  font-size: 1.15rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+
+.tagline {
+  margin: 0.4rem 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+/* Thread ------------------------------------------------------------- */
+
+/* Takes the space .thread used to claim, and gives the pill something to be
+   positioned against that is not the scrolling content itself. */
+.thread-wrap {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.thread {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  padding: 0.5rem 0;
+  scrollbar-width: thin;
+}
+
+.msg {
+  max-width: 88%;
+  padding: 0.7rem 0.95rem;
+  border-radius: var(--radius);
+  overflow-wrap: anywhere;
+  animation: rise 0.18s ease-out;
+}
+
+.msg.user {
+  align-self: flex-end;
+  background: var(--user-bg);
+  color: var(--user-text);
+  border-bottom-right-radius: 4px;
+  white-space: pre-wrap; /* the user's own line breaks, rendered as typed */
+}
+
+/* Rendered markdown inside bot messages ------------------------------- */
+
+.msg.bot p {
+  margin: 0 0 0.6rem;
+}
+
+.msg.bot p:last-child {
+  margin-bottom: 0;
+}
+
+/* Category labels — an emphasized lead-in, not a document heading, so it
+   stays close in size to body text and just gains weight and spacing. */
+.msg.bot p.section {
+  font-weight: 650;
+  margin-top: 0.9rem;
+  margin-bottom: 0.35rem;
+}
+
+.msg.bot p.section:first-child {
+  margin-top: 0;
+}
+
+.msg.bot ul {
+  margin: 0 0 0.6rem;
+  padding-left: 1.15rem;
+}
+
+.msg.bot ul:last-child {
+  margin-bottom: 0;
+}
+
+.msg.bot li {
+  margin-bottom: 0.3rem;
+}
+
+.msg.bot li::marker {
+  color: var(--muted);
+}
+
+.msg.bot strong {
+  font-weight: 650;
+}
+
+.msg.bot {
+  align-self: flex-start;
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+
+/* Everything the avatar says: answers, refusals, and the front-door message.
+ *
+ * The tail is a square rotated 45 degrees with two of its borders drawn, so
+ * the bubble's outline carries on around it instead of stopping at the edge.
+ * It points up, at the avatar in the header directly above, rather than
+ * sideways at nothing.
+ */
+.msg.bot,
+.msg.error {
+  position: relative;
+}
+
+.msg.bot::before,
+.msg.error::before {
+  content: "";
+  position: absolute;
+  top: -6px;
+  left: 18px;
+  width: 10px;
+  height: 10px;
+  transform: rotate(45deg);
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  border-top: 1px solid var(--border);
+}
+
+/* The error bubble is transparent with a dashed outline, so its tail matches
+   rather than appearing as a solid chip hanging off a dashed box. */
+.msg.error::before {
+  background: var(--bg);
+  border-left-style: dashed;
+  border-top-style: dashed;
+}
+
+.msg.error {
+  align-self: flex-start;
+  background: var(--bg);
+  border: 1px dashed var(--border);
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Typing indicator */
+
+.typing {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  height: 1.2em;
+}
+
+.typing span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--muted);
+  animation: blink 1.2s infinite ease-in-out;
+}
+
+.typing span:nth-child(2) {
+  animation-delay: 0.18s;
+}
+.typing span:nth-child(3) {
+  animation-delay: 0.36s;
+}
+
+@keyframes blink {
+  0%,
+  80%,
+  100% {
+    opacity: 0.25;
+  }
+  40% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .msg,
+  .typing span {
+    animation: none;
+  }
+}
+
+/* Empty state -------------------------------------------------------- */
+
+.empty {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.empty p {
+  margin: 0 0 0.6rem;
+}
+
+.suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.chip {
+  font: inherit;
+  font-size: 0.85rem;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.4rem 0.8rem;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.chip:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+/* Composer ----------------------------------------------------------- */
+
+.composer {
+  flex: none;
+  display: flex;
+  align-items: flex-end;
+  gap: 0.5rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.5rem 0.5rem 0.5rem 0.9rem;
+}
+
+/* An author `display` beats the browser's [hidden] rule, so setting the
+   attribute alone leaves the composer on screen — a dead input box below a
+   message saying you cannot ask anything. Same trap as .jump. */
+.composer[hidden] { display: none; }
+
+.composer:focus-within {
+  border-color: var(--accent);
+}
+
+textarea {
+  flex: 1;
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  resize: none;
+  outline: none;
+  max-height: 8rem;
+  padding: 0.35rem 0;
+}
+
+button[type="submit"] {
+  flex: none;
+  width: 2.2rem;
+  height: 2.2rem;
+  display: grid;
+  place-items: center;
+  border: none;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+button[type="submit"]:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.disclaimer {
+  flex: none;
+  margin: 0;
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+/* Shown in place of the starter prompts when a link is no longer good. Styled
+   as a plain note rather than an error: nothing has gone wrong, the site is
+   simply closed to this visitor. */
+/* The front door. A bot bubble like any other — it is the avatar talking —
+   but sized as a statement, because it is the only thing the site says to
+   whoever finds the URL and nothing has gone wrong. */
+.msg.bot.welcome {
+  font-size: 1.05rem;
+  line-height: 1.55;
+  max-width: 42ch;
+}
+
+.denied {
+  color: var(--muted, #8b949e);
+  max-width: 34ch;
+  margin: 0;
+}
+
+/* Jump-to-latest -------------------------------------------------------
+ *
+ * The thread does not follow the text as it streams: a page that moves while
+ * you are reading it loses your place every time a sentence lands. This is how
+ * you learn there is more below — dots while the answer is still being
+ * written, an arrow once it is done and there is somewhere to jump to.
+ *
+ * Positioned over the thread, not inside it, so appearing and disappearing
+ * never reflows what you are reading.
+ */
+.jump {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 0.5rem;
+  z-index: 5;
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  padding: 0;
+
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted);
+  cursor: pointer;
+  box-shadow: 0 2px 10px rgb(0 0 0 / 35%);
+}
+/* An author `display` beats the browser's [hidden] rule, so setting the
+   attribute would otherwise change nothing on screen — the element stays
+   visible while the DOM insists it is hidden. */
+.jump[hidden] { display: none; }
+
+.jump:hover { color: var(--text); border-color: var(--accent); }
+.jump:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* One element, two faces: whichever state is not current is simply absent. */
+.jump .jump-dots { display: none; gap: 3px; align-items: center; }
+.jump .jump-arrow { display: block; }
+.jump.is-writing .jump-dots { display: inline-flex; }
+.jump.is-writing .jump-arrow { display: none; }
+/* Not a button while it is only reporting progress — there is no bottom to
+   jump to yet that will still be the bottom a moment later. */
+.jump.is-writing { cursor: default; }
+
+.jump .jump-dots span {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: blink 1.2s infinite ease-in-out;
+}
+.jump .jump-dots span:nth-child(2) { animation-delay: 0.18s; }
+.jump .jump-dots span:nth-child(3) { animation-delay: 0.36s; }
+
+@media (prefers-reduced-motion: reduce) {
+  .jump .jump-dots span { animation: none; opacity: 0.7; }
+}

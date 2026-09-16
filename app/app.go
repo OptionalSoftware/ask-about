@@ -50,12 +50,8 @@ type Options struct {
 	Log *slog.Logger
 
 	// The compiled-in files. The root package of this module provides them.
-	// The sample for the configured kind stands in when no document is
-	// supplied; a kind whose sample is empty falls back to SampleDocument.
 	Web            fs.FS
 	SampleDocument string
-	ProductSample  string
-	CompanySample  string
 	PersonPersona  string
 	ProductPersona string
 	Prompts        fs.FS
@@ -137,19 +133,8 @@ func Build(opts Options) (*App, error) {
 	// path, so the fallback is lossless there. Anywhere else it means a real
 	// file was expected and the built-in one will serve instead, which looks
 	// like a working site. Say so at startup.
-	sample := opts.SampleDocument
-	switch cfg.Subject.Kind {
-	case config.KindProduct:
-		if opts.ProductSample != "" {
-			sample = opts.ProductSample
-		}
-	case config.KindCompany:
-		if opts.CompanySample != "" {
-			sample = opts.CompanySample
-		}
-	}
 	warnIfMissing(log, "corpus", cfg.Corpus.Path, config.Default().Corpus.Path,
-		"answering from the built-in sample, a fictional "+cfg.Subject.KindName())
+		"answering from the built-in sample, a fictional person named Daniel Reyes")
 	// The kind's own file is what the built-in persona was compiled from, so
 	// naming it explicitly and not shipping it is the same as leaving it
 	// empty: no warning. Any other path is a real file that is expected.
@@ -162,7 +147,7 @@ func Build(opts Options) (*App, error) {
 	}
 	first, last, full := cfg.Subject.NameParts()
 	c, err := corpus.Load(
-		cfg.PersonaPath(), cfg.Corpus.Path, persona, sample,
+		cfg.PersonaPath(), cfg.Corpus.Path, persona, opts.SampleDocument,
 		corpus.Subject{First: first, Last: last, Full: full, Pronouns: cfg.Subject.PronounSet()},
 	)
 	if err != nil {

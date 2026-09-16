@@ -50,8 +50,6 @@ func base(t *testing.T) Options {
 		Log:            slog.New(slog.NewTextHandler(io.Discard, nil)),
 		Web:            fstest.MapFS{"index.html": &fstest.MapFile{Data: []byte("<html>{{.Title}}</html>")}},
 		SampleDocument: "# Dana Reed\nWorked places.",
-		ProductSample:  "# Widget\nA thing.",
-		CompanySample:  "# Acme\nA firm.",
 		PersonPersona:  "You answer about {{fullName}}.",
 		ProductPersona: "You answer about the product {{fullName}}.",
 	}
@@ -257,28 +255,5 @@ func TestReplaceAdminPages(t *testing.T) {
 		if w := get(a.Handler, path, false); w.Code != http.StatusNotFound {
 			t.Errorf("built-in %s still mounted: %d", path, w.Code)
 		}
-	}
-}
-
-// The built-in sample follows the kind: a product or company site with no
-// document does not answer about the sample person.
-func TestSampleFollowsKind(t *testing.T) {
-	for kind, want := range map[string]string{"person": "Dana Reed", "product": "Widget", "company": "Acme"} {
-		opts := base(t)
-		cfg, err := config.Load(opts.ConfigPath)
-		if err != nil {
-			t.Fatal(err)
-		}
-		cfg.Subject.Kind, cfg.Subject.Name = kind, "X"
-		cfg.Corpus.Path = ""
-		opts.Config = &cfg
-		a, err := Build(opts)
-		if err != nil {
-			t.Fatalf("%s: %v", kind, err)
-		}
-		if !strings.Contains(a.Corpus.System(), want) {
-			t.Errorf("%s: sample document lacks %q", kind, want)
-		}
-		a.Close()
 	}
 }

@@ -20,20 +20,10 @@ var web embed.FS
 func Web() fs.FS { return mustSub(web, "web") }
 
 // SampleDocument is the fictional document the binary answers from when no
-// other is supplied and the subject is a person: Daniel Reyes.
+// other is supplied.
 //
 //go:embed docs/content.md
 var SampleDocument string
-
-// ProductSample is the same for a product: Larkspur Desk.
-//
-//go:embed docs/product.md
-var ProductSample string
-
-// CompanySample is the same for a company: Fennwick Harbor Engineering.
-//
-//go:embed docs/company.md
-var CompanySample string
 
 // The personas, one per kind of subject.
 //

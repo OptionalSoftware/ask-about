@@ -42,8 +42,6 @@ func main() {
 		Log:            log,
 		Web:            askabout.Web(),
 		SampleDocument: askabout.SampleDocument,
-		ProductSample:  askabout.ProductSample,
-		CompanySample:  askabout.CompanySample,
 		PersonPersona:  askabout.PersonPersona,
 		ProductPersona: askabout.ProductPersona,
 		Prompts:        askabout.Prompts(),

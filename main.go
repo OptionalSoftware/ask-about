@@ -21,12 +21,12 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/optionalsoftware/ask-about/internal/config"
-	"github.com/optionalsoftware/ask-about/internal/corpus"
-	"github.com/optionalsoftware/ask-about/internal/llm"
-	"github.com/optionalsoftware/ask-about/internal/pipeline"
-	"github.com/optionalsoftware/ask-about/internal/server"
-	"github.com/optionalsoftware/ask-about/internal/store"
+	"github.com/optionalsoftware/ask-about/config"
+	"github.com/optionalsoftware/ask-about/corpus"
+	"github.com/optionalsoftware/ask-about/llm"
+	"github.com/optionalsoftware/ask-about/pipeline"
+	"github.com/optionalsoftware/ask-about/server"
+	"github.com/optionalsoftware/ask-about/store"
 )
 
 //go:embed all:web

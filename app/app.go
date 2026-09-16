@@ -106,6 +106,9 @@ func Build(opts Options) (*App, error) {
 	var cfg config.Config
 	if opts.Config != nil {
 		cfg = *opts.Config
+		if err := cfg.Validate(); err != nil {
+			return nil, err
+		}
 	} else {
 		var err error
 		if cfg, err = config.Load(opts.ConfigPath); err != nil {

@@ -565,7 +565,7 @@ func Load(path string) (Config, error) {
 		}
 	}
 	cfg.Unknown = undecodedKeys(meta)
-	return cfg, cfg.validate()
+	return cfg, cfg.Validate()
 }
 
 // undecodedKeys lists settings present in the file that no field claims.
@@ -578,7 +578,11 @@ func undecodedKeys(meta toml.MetaData) []string {
 	return out
 }
 
-func (c Config) validate() error {
+// Validate checks each setting on its own: a known vendor, a model, a kind,
+// a name, parseable pronouns, a parseable proxy and allowlist, a sane
+// retention. Load calls it; a caller that builds a Config some other way
+// should too.
+func (c Config) Validate() error {
 	switch c.LLM.Vendor {
 	case "anthropic", "openai", "bedrock":
 	default:

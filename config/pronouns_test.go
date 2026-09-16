@@ -16,12 +16,12 @@ func TestBadPronounsFailValidation(t *testing.T) {
 	// Establish that the defaults validate on their own, or the assertion below
 	// would pass on whatever unrelated guard fired first.
 	cfg := Default()
-	if err := cfg.validate(); err != nil {
+	if err := cfg.Validate(); err != nil {
 		t.Fatalf("the defaults do not validate, so this test proves nothing: %v", err)
 	}
 
 	cfg.Subject.Pronouns = "xe/xem"
-	err := cfg.validate()
+	err := cfg.Validate()
 	if err == nil {
 		t.Fatal("validate accepted an incomplete pronoun set")
 	}
@@ -127,18 +127,18 @@ func TestProductNameFillsEveryNamePlaceholder(t *testing.T) {
 func TestKindIsValidated(t *testing.T) {
 	cfg := Default()
 	cfg.Subject.Kind = "service"
-	if err := cfg.validate(); err == nil || !strings.Contains(err.Error(), "subject.kind") {
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "subject.kind") {
 		t.Errorf("an unknown kind was accepted: %v", err)
 	}
 	cfg = Default()
 	cfg.Subject.Kind = KindProduct
 	cfg.Subject.Name = "Larkspur Desk"
-	if err := cfg.validate(); err != nil {
+	if err := cfg.Validate(); err != nil {
 		t.Errorf("a valid product config was refused: %v", err)
 	}
 	// "company" is what people write for a company; it is a product to the code.
 	cfg.Subject.Kind = KindCompany
-	if err := cfg.validate(); err != nil {
+	if err := cfg.Validate(); err != nil {
 		t.Errorf("kind = company was refused: %v", err)
 	}
 	if !cfg.Subject.IsProduct() || cfg.Subject.PersonaFile() != "prompts/product.md" {
@@ -147,20 +147,20 @@ func TestKindIsValidated(t *testing.T) {
 	// A subject with no name at all renders "Ask about " on the page.
 	cfg = Default()
 	cfg.Subject.FirstName, cfg.Subject.LastName = "", ""
-	if err := cfg.validate(); err == nil || !strings.Contains(err.Error(), "no name") {
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "no name") {
 		t.Errorf("a nameless subject was accepted: %v", err)
 	}
 	// A surname alone renders blanks wherever the persona says {{firstName}}.
 	cfg = Default()
 	cfg.Subject.FirstName = ""
-	if err := cfg.validate(); err == nil || !strings.Contains(err.Error(), "firstName") {
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "firstName") {
 		t.Errorf("a person with only a surname was accepted: %v", err)
 	}
 	// A product has no first name and must not be caught by that rule.
 	cfg = Default()
 	cfg.Subject.Kind, cfg.Subject.Name = KindProduct, "Larkspur Desk"
 	cfg.Subject.FirstName, cfg.Subject.LastName = "", ""
-	if err := cfg.validate(); err != nil {
+	if err := cfg.Validate(); err != nil {
 		t.Errorf("a product was refused for lacking a first name: %v", err)
 	}
 }
@@ -241,19 +241,19 @@ func TestPartialSubjectDoesNotInheritDefaultNames(t *testing.T) {
 func TestProxyAndRetentionAreValidated(t *testing.T) {
 	cfg := Default()
 	cfg.Server.TrustedProxy = "not-an-address"
-	if err := cfg.validate(); err == nil || !strings.Contains(err.Error(), "server.trusted_proxy") {
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "server.trusted_proxy") {
 		t.Errorf("bad trusted_proxy accepted: %v", err)
 	}
 	for _, ok := range []string{"", "127.0.0.1", "10.0.0.0/8", "::1"} {
 		cfg = Default()
 		cfg.Server.TrustedProxy = ok
-		if err := cfg.validate(); err != nil {
+		if err := cfg.Validate(); err != nil {
 			t.Errorf("trusted_proxy %q refused: %v", ok, err)
 		}
 	}
 	cfg = Default()
 	cfg.Storage.RetainDays = -1
-	if err := cfg.validate(); err == nil || !strings.Contains(err.Error(), "retain_days") {
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "retain_days") {
 		t.Errorf("negative retain_days accepted: %v", err)
 	}
 }

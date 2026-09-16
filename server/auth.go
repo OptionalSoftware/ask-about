@@ -44,7 +44,8 @@ func newAdminAuth(cfg config.Admin, trusted *netip.Prefix, log *slog.Logger) (*a
 	}, nil
 }
 
-func (a *adminAuth) wrap(next http.Handler) http.Handler {
+// Wrap makes adminAuth an Authenticator.
+func (a *adminAuth) Wrap(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !a.addressAllowed(r) {
 			// Logged with the address as seen, because the usual way to be

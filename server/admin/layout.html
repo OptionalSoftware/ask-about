@@ -234,8 +234,8 @@
 {{define "nav"}}
 <nav class="top">
   <span class="brand">ask-about</span>
-  <a href="/ask-about/admin" {{if eq . "links"}}class="on"{{end}}>Links</a>
-  <a href="/ask-about/admin/document" {{if eq . "document"}}class="on"{{end}}>Your Document</a>
+  {{range .}}<a href="{{.Href}}" {{if .On}}class="on"{{end}}>{{.Title}}</a>
+  {{end}}
 </nav>
 {{end}}
 

@@ -13,7 +13,7 @@ help:
 
 ## build: produce the self-contained binary (UI, corpus, persona embedded)
 build:
-	go build -trimpath -ldflags="-s -w" -o $(BINARY) .
+	go build -trimpath -ldflags="-s -w" -o $(BINARY) ./cmd/ask-about
 
 ## linux: cross-compile for the server (make linux GOARCH=arm64 for arm)
 #
@@ -22,11 +22,11 @@ build:
 # server with no libraries on it.
 linux:
 	GOOS=linux GOARCH=$(GOARCH) CGO_ENABLED=0 \
-		go build -trimpath -ldflags="-s -w" -o $(BINARY)-linux-$(GOARCH) .
+		go build -trimpath -ldflags="-s -w" -o $(BINARY)-linux-$(GOARCH) ./cmd/ask-about
 
 ## dev: run with web assets served from ./web — edit CSS/JS, refresh, no rebuild
 dev:
-	go run . -dev
+	go run ./cmd/ask-about -dev
 
 ## run: run the embedded build
 run: build

@@ -39,6 +39,7 @@ var adminTmpl = template.Must(template.New("admin").Funcs(template.FuncMap{
 
 // listView is the contacts page.
 type listView struct {
+	Nav      []navLink
 	Contacts []contactRow
 	// Query is what was typed in the search box, echoed back so the box keeps
 	// its contents after the page reloads.
@@ -83,6 +84,7 @@ type inviteRow struct {
 
 // detailView is one link: its settings and its visit history.
 type detailView struct {
+	Nav      []navLink
 	Name     string
 	Link     inviteRow
 	Sessions []sessionRow
@@ -205,7 +207,7 @@ func (s *Server) handleAdminLink(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	view := detailView{Saved: r.URL.Query().Get("saved") == "1"}
+	view := detailView{Nav: s.nav(""), Saved: r.URL.Query().Get("saved") == "1"}
 	switch r.URL.Query().Get("err") {
 	case "date":
 		view.Error = "That date could not be read. Use the picker, or clear it for no expiry."
@@ -260,6 +262,7 @@ func (s *Server) renderList(w http.ResponseWriter, r *http.Request, view listVie
 		}
 	}
 
+	view.Nav = s.nav("")
 	view.Spend = s.buildSpend(r.Context())
 	view.Contacts = make([]contactRow, 0, len(contacts))
 	for _, c := range contacts {
@@ -371,6 +374,24 @@ func comma(v any) string {
 	return b.String()
 }
 
+// builtinPages are the admin pages the free edition ships: Links, and Your
+// Document. Anything a caller adds through Options.AdminPages follows them.
+func (s *Server) builtinPages() []AdminPage {
+	return []AdminPage{
+		{Title: "Links", Path: "", Routes: map[string]http.Handler{
+			"GET ":               http.HandlerFunc(s.handleAdmin),
+			"GET /links/{id}":    http.HandlerFunc(s.handleAdminLink),
+			"POST /links":        http.HandlerFunc(s.handleAdminCreate),
+			"POST /links/revoke": http.HandlerFunc(s.handleAdminRevoke),
+			"POST /links/{id}":   http.HandlerFunc(s.handleAdminUpdate),
+		}},
+		{Title: "Your Document", Path: "/document", Routes: map[string]http.Handler{
+			"GET /document":        http.HandlerFunc(s.handleDocument),
+			"GET /document/{slug}": http.HandlerFunc(s.handleDocumentPrompt),
+		}},
+	}
+}
+
 // adminRoutes registers the admin surface behind auth. Nothing is registered
 // when admin is disabled or storage is off, so an unconfigured deploy has no
 // admin surface to find rather than one that merely refuses.
@@ -378,25 +399,40 @@ func (s *Server) adminRoutes(mux *http.ServeMux, cfg config.Admin) error {
 	if !cfg.Enabled() || s.store == nil {
 		return nil
 	}
-	auth, err := newAdminAuth(cfg, s.trusted, s.log)
-	if err != nil {
-		return err
+	auth := s.adminAuth
+	if auth == nil {
+		basic, err := newAdminAuth(cfg, s.trusted, s.log)
+		if err != nil {
+			return err
+		}
+		auth = basic
 	}
 	// Registered route by route rather than behind a "/admin/" wildcard: the
 	// wildcard matches every method and so conflicts with the method-scoped
 	// "GET /" that serves the chat page.
-	for pattern, h := range map[string]http.HandlerFunc{
-		"GET " + Base + "/admin":                 s.handleAdmin,
-		"GET " + Base + "/admin/document":        s.handleDocument,
-		"GET " + Base + "/admin/document/{slug}": s.handleDocumentPrompt,
-		"GET " + Base + "/admin/links/{id}":      s.handleAdminLink,
-		"POST " + Base + "/admin/links":          s.handleAdminCreate,
-		"POST " + Base + "/admin/links/revoke":   s.handleAdminRevoke,
-		"POST " + Base + "/admin/links/{id}":     s.handleAdminUpdate,
-	} {
-		mux.Handle(pattern, auth.wrap(h))
+	for _, page := range s.pages {
+		for pattern, h := range page.Routes {
+			method, path, _ := strings.Cut(pattern, " ")
+			mux.Handle(method+" "+Base+"/admin"+path, auth.Wrap(h))
+		}
 	}
 	return nil
+}
+
+// navLink is one entry in the admin navigation.
+type navLink struct {
+	Title string
+	Href  string
+	On    bool
+}
+
+// nav builds the navigation with the page at path marked current.
+func (s *Server) nav(path string) []navLink {
+	out := make([]navLink, 0, len(s.pages))
+	for _, p := range s.pages {
+		out = append(out, navLink{Title: p.Title, Href: Base + "/admin" + p.Path, On: p.Path == path})
+	}
+	return out
 }
 
 // spendDays is how much history the strip shows. Two weeks is enough to see a

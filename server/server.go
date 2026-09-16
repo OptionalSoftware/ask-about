@@ -49,7 +49,6 @@ type Features struct {
 
 type Server struct {
 	pipe      *pipeline.Pipeline
-	corpus    *corpus.Corpus
 	web       fs.FS
 	features  Features
 	photoPath string
@@ -78,7 +77,14 @@ type Server struct {
 	prompts []prompt
 	product bool
 	trusted *netip.Prefix
-	log     *slog.Logger
+	// docs answers Current() on every question. Set from Options.Documents,
+	// or a static wrapper around the corpus passed to New.
+	docs      Documents
+	adminAuth Authenticator
+	// pages is the admin navigation and routes: the built-in pages, then
+	// Options.AdminPages.
+	pages []AdminPage
+	log   *slog.Logger
 }
 
 type Options struct {
@@ -98,12 +104,55 @@ type Options struct {
 	// TrustedProxy is the only source X-Forwarded-For is believed from. Nil
 	// means the connecting address is always the client.
 	TrustedProxy *netip.Prefix
+
+	// AdminAuth gates every admin page. Nil uses HTTP Basic auth with the
+	// [admin] credentials, the lockout, and the address allowlist.
+	AdminAuth Authenticator
+	// AdminPages are mounted behind AdminAuth after the built-in Links and
+	// Your Document pages, and listed in the admin navigation in order.
+	AdminPages []AdminPage
+	// Documents supplies the document every answer comes from. Nil serves
+	// the corpus passed to New for the life of the process.
+	Documents Documents
 }
+
+// Authenticator decides who may reach the admin pages. Wrap returns a
+// handler that either serves next or refuses.
+type Authenticator interface {
+	Wrap(next http.Handler) http.Handler
+}
+
+// AdminPage is one entry in the admin navigation and the routes behind it.
+type AdminPage struct {
+	// Title is the navigation label.
+	Title string
+	// Path is the page's path under Base + "/admin", starting with "/"; ""
+	// is the admin root. The navigation links here.
+	Path string
+	// Routes are patterns relative to Base + "/admin", each with its method
+	// ("GET /document/{slug}"). Every one is mounted behind AdminAuth.
+	Routes map[string]http.Handler
+}
+
+// Documents supplies the current document. Current is called on every
+// question, so an implementation may swap the document without a restart.
+type Documents interface {
+	Current() *corpus.Corpus
+}
+
+// static is the free edition's Documents: the corpus loaded at startup.
+type static struct{ c *corpus.Corpus }
+
+func (s static) Current() *corpus.Corpus { return s.c }
 
 func New(pipe *pipeline.Pipeline, c *corpus.Corpus, web fs.FS, opts Options, log *slog.Logger) *Server {
 	opts.Features.Photo = opts.PhotoPath != ""
-	return &Server{
-		pipe: pipe, corpus: c, web: web,
+	docs := opts.Documents
+	if docs == nil {
+		docs = static{c}
+	}
+	s := &Server{
+		pipe: pipe, web: web,
 		features: opts.Features, photoPath: opts.PhotoPath,
 		store: opts.Store, pricing: opts.Pricing, admin: opts.Admin,
 		preview:       opts.Preview,
@@ -119,8 +168,12 @@ func New(pipe *pipeline.Pipeline, c *corpus.Corpus, web fs.FS, opts Options, log
 		prompts:       loadPrompts(opts.Prompts, opts.Subject.IsProduct(), log),
 		product:       opts.Subject.IsProduct(),
 		trusted:       opts.TrustedProxy,
+		docs:          docs,
+		adminAuth:     opts.AdminAuth,
 		log:           log,
 	}
+	s.pages = append(s.builtinPages(), opts.AdminPages...)
+	return s
 }
 
 // Base is the one prefix ask-about owns. Nothing it serves sits outside this.
@@ -269,7 +322,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	// r.Context() is cancelled when the client disconnects, which propagates
 	// through the pipeline and aborts the in-flight model request.
 	events := s.pipe.Run(r.Context(), llm.Request{
-		System:   s.corpus.System(),
+		System:   s.docs.Current().System(),
 		Messages: msgs,
 		Session:  session,
 		Invite:   adm.InviteID,

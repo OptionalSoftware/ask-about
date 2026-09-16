@@ -1,15 +1,14 @@
-// Command ask-about serves a grounded chat bot over a single document.
+// Package app assembles a running ask-about from its parts: config, document,
+// model, store, pipeline and server. cmd/ask-about is a thin caller of it,
+// and so is any other binary built on this module.
 //
-// The binary is self-contained: the UI, the default corpus, the persona, and
-// the default config are all embedded. Flags override any of them from disk,
-// so swapping the corpus or the model needs no rebuild.
-package main
+// Everything a caller might want to replace is a field on Options. Left nil,
+// each falls back to what the free edition does.
+package app
 
 import (
 	"context"
-	"embed"
 	"errors"
-	"flag"
 	"fmt"
 	"io/fs"
 	"log/slog"
@@ -17,8 +16,6 @@ import (
 	"net/http"
 	"net/netip"
 	"os"
-	"os/signal"
-	"syscall"
 	"time"
 
 	"github.com/optionalsoftware/ask-about/config"
@@ -29,68 +26,76 @@ import (
 	"github.com/optionalsoftware/ask-about/store"
 )
 
-//go:embed all:web
-var embeddedWeb embed.FS
+// Version is reported by the -version flag and in the startup log.
+const Version = "0.2.0"
 
-//go:embed docs/content.md
-var embeddedCorpus string
+// Options is everything Build needs. The first group is what the free
+// binary passes; the second is the seams.
+type Options struct {
+	ConfigPath string
+	// CorpusPath and Addr override the config file when set.
+	CorpusPath string
+	Addr       string
+	// Dev serves the web assets from ./web on disk rather than from Web, so
+	// an edit shows on refresh.
+	Dev bool
+	Log *slog.Logger
 
-// One persona per kind of subject. Which is used follows subject.kind; a
-// persona path in the config overrides either from disk.
-//
-//go:embed prompts/person.md
-var embeddedPersonPersona string
+	// The compiled-in files. The root package of this module provides them.
+	Web            fs.FS
+	SampleDocument string
+	PersonPersona  string
+	ProductPersona string
+	Prompts        fs.FS
 
-//go:embed prompts/product.md
-var embeddedProductPersona string
-
-// The interview prompts the admin page hands out, one per kind of subject.
-//
-//go:embed prompts/interview-*.md
-var embeddedPrompts embed.FS
-
-func main() {
-	var (
-		configPath  = flag.String("config", "config.toml", "path to the TOML config file")
-		corpusPath  = flag.String("corpus", "", "override corpus.path from the config")
-		addr        = flag.String("addr", "", "override server.addr from the config")
-		dev         = flag.Bool("dev", false, "serve web assets from ./web instead of the embedded copy")
-		showVersion = flag.Bool("version", false, "print version and exit")
-	)
-	flag.Parse()
-
-	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
-
-	if *showVersion {
-		log.Info("ask-about", "version", version)
-		return
-	}
-
-	if err := run(log, *configPath, *corpusPath, *addr, *dev); err != nil {
-		log.Error("fatal", "err", err)
-		os.Exit(1)
-	}
+	// AdminAuth gates the admin pages. Nil uses the built-in HTTP Basic auth
+	// configured under [admin].
+	AdminAuth server.Authenticator
+	// AdminPages are mounted behind AdminAuth alongside the built-in pages
+	// and listed in the admin navigation.
+	AdminPages []server.AdminPage
+	// Observers are told about every completed turn, after the built-in
+	// recorder when storage is on.
+	Observers []pipeline.Observer
+	// Documents supplies the document to answer from. Nil serves the one
+	// loaded from the config's corpus path at startup, for the life of the
+	// process.
+	Documents server.Documents
 }
 
-const version = "0.1.0"
+// App is a built, not yet listening, ask-about.
+type App struct {
+	Config  config.Config
+	Corpus  *corpus.Corpus
+	Store   store.Store // nil when storage is off
+	Handler http.Handler
+	log     *slog.Logger
+}
 
-func run(log *slog.Logger, configPath, corpusPath, addr string, dev bool) error {
-	cfg, err := config.Load(configPath)
+// Build does everything up to listening. It returns an error for anything
+// that would otherwise fail at the first visitor, so a bad config is a
+// startup failure with a message rather than a broken site.
+func Build(opts Options) (*App, error) {
+	log := opts.Log
+	if log == nil {
+		log = slog.New(slog.NewTextHandler(os.Stderr, nil))
+	}
+
+	cfg, err := config.Load(opts.ConfigPath)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	// A misspelt key parses fine and then does nothing, so the only symptom is
 	// a feature that appears broken. Say so at startup instead.
 	for _, key := range cfg.Unknown {
 		log.Warn("unrecognised setting in the config file; it has no effect",
-			"key", key, "file", configPath)
+			"key", key, "file", opts.ConfigPath)
 	}
-
-	if corpusPath != "" {
-		cfg.Corpus.Path = corpusPath
+	if opts.CorpusPath != "" {
+		cfg.Corpus.Path = opts.CorpusPath
 	}
-	if addr != "" {
-		cfg.Server.Addr = addr
+	if opts.Addr != "" {
+		cfg.Server.Addr = opts.Addr
 	}
 
 	// A corpus or persona path that does not exist is not an error — the copy
@@ -106,22 +111,22 @@ func run(log *slog.Logger, configPath, corpusPath, addr string, dev bool) error 
 	warnIfMissing(log, "persona", cfg.Corpus.Persona, cfg.Subject.PersonaFile(),
 		"using the persona built into the binary")
 
-	embeddedPersona := embeddedPersonPersona
+	persona := opts.PersonPersona
 	if cfg.Subject.IsProduct() {
-		embeddedPersona = embeddedProductPersona
+		persona = opts.ProductPersona
 	}
 	first, last, full := cfg.Subject.NameParts()
 	c, err := corpus.Load(
-		cfg.PersonaPath(), cfg.Corpus.Path, embeddedPersona, embeddedCorpus,
+		cfg.PersonaPath(), cfg.Corpus.Path, persona, opts.SampleDocument,
 		corpus.Subject{First: first, Last: last, Full: full, Pronouns: cfg.Subject.PronounSet()},
 	)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	provider, err := llm.New(cfg.LLM)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// Persistence is optional: an empty storage.path runs the chat with
@@ -130,16 +135,18 @@ func run(log *slog.Logger, configPath, corpusPath, addr string, dev bool) error 
 	if cfg.Storage.Path != "" {
 		db, err = store.OpenSQLite(cfg.Storage.Path)
 		if err != nil {
-			return err
+			return nil, err
 		}
-		defer db.Close()
 		if err := checkPricing(cfg, log); err != nil {
-			return err
+			db.Close()
+			return nil, err
 		}
 	}
-
 	if err := cfg.CheckDeployable(); err != nil {
-		return err
+		if db != nil {
+			db.Close()
+		}
+		return nil, err
 	}
 
 	// X-Forwarded-For is only believed from the configured proxy. Say so at
@@ -153,17 +160,18 @@ func run(log *slog.Logger, configPath, corpusPath, addr string, dev bool) error 
 			"every request behind a proxy appears to come from the proxy")
 	}
 
-	// No guard is implemented. The stage still runs — see pipeline.Guard.
-	var guard pipeline.Guard = pipeline.PassThrough{}
-
-	web, err := webFS(dev)
-	if err != nil {
-		return err
+	web := opts.Web
+	if opts.Dev {
+		web = os.DirFS("web")
 	}
 
-	pipe := pipeline.New(provider, guard, log)
+	// No guard is implemented. The stage still runs — see pipeline.Guard.
+	pipe := pipeline.New(provider, pipeline.PassThrough{}, log)
 	if db != nil {
 		pipe.Observe(store.NewRecorder(db, cfg.LLM.Vendor, log))
+	}
+	for _, o := range opts.Observers {
+		pipe.Observe(o)
 	}
 
 	handler, err := server.New(pipe, c, web, server.Options{
@@ -186,20 +194,37 @@ func run(log *slog.Logger, configPath, corpusPath, addr string, dev bool) error 
 			ImagePath:   cfg.PreviewImagePath(),
 		},
 		Access:       cfg.Access,
-		Dev:          dev,
-		Prompts:      mustSub(embeddedPrompts, "prompts"),
+		Dev:          opts.Dev,
+		Prompts:      opts.Prompts,
 		TrustedProxy: trusted,
+		AdminAuth:    opts.AdminAuth,
+		AdminPages:   opts.AdminPages,
+		Documents:    opts.Documents,
 	}, log).Handler()
 	if err != nil {
-		return err
+		if db != nil {
+			db.Close()
+		}
+		return nil, err
 	}
 	if cfg.Admin.Enabled() && db != nil {
 		log.Info("admin enabled", "path", server.Base+"/admin", "restricted_to", cfg.Admin.IP)
 	}
 
+	return &App{Config: cfg, Corpus: c, Store: db, Handler: handler, log: log}, nil
+}
+
+// Run listens and serves until ctx is cancelled, then shuts down giving
+// in-flight answers ten seconds to finish. It closes the store on return.
+func (a *App) Run(ctx context.Context) error {
+	if a.Store != nil {
+		defer a.Store.Close()
+	}
+	cfg := a.Config
+
 	srv := &http.Server{
 		Addr:              cfg.Server.Addr,
-		Handler:           handler,
+		Handler:           a.Handler,
 		ReadHeaderTimeout: 10 * time.Second,
 		// No WriteTimeout: responses are long-lived SSE streams.
 	}
@@ -211,22 +236,19 @@ func run(log *slog.Logger, configPath, corpusPath, addr string, dev bool) error 
 		return fmt.Errorf("cannot listen on %s: %w", cfg.Server.Addr, err)
 	}
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-
-	if db != nil && cfg.Storage.RetainDays > 0 {
-		go pruneLoop(ctx, db, cfg.Storage.RetainDays, log)
+	if a.Store != nil && cfg.Storage.RetainDays > 0 {
+		go pruneLoop(ctx, a.Store, cfg.Storage.RetainDays, a.log)
 	}
 
-	log.Info("listening",
+	a.log.Info("listening",
 		"addr", ln.Addr().String(),
+		"version", Version,
 		"vendor", cfg.LLM.Vendor,
 		"model", cfg.LLM.Model,
 		"subject", cfg.Subject.FullName(),
 		"kind", cfg.Subject.KindName(),
 		"persona", cfg.PersonaPath(),
-		"corpus_bytes", len(c.Content),
-		"dev", dev,
+		"corpus_bytes", len(a.Corpus.Content),
 	)
 
 	errc := make(chan error, 1)
@@ -240,7 +262,7 @@ func run(log *slog.Logger, configPath, corpusPath, addr string, dev bool) error 
 	case err := <-errc:
 		return err
 	case <-ctx.Done():
-		log.Info("shutting down")
+		a.log.Info("shutting down")
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		return srv.Shutdown(shutdownCtx)
@@ -306,7 +328,6 @@ func checkPricing(cfg config.Config, log *slog.Logger) error {
 			"model", cfg.LLM.Model)
 		return nil
 	}
-
 	if cfg.Access.CapsEnabled() {
 		log.Info("spend caps active",
 			"per_session_usd", cfg.Access.MaxCostPerSession,
@@ -314,23 +335,4 @@ func checkPricing(cfg config.Config, log *slog.Logger) error {
 			"model", cfg.LLM.Model)
 	}
 	return nil
-}
-
-// mustSub roots an embedded filesystem at dir. The directory is a compile-time
-// literal, so a failure here is a build mistake, not a runtime condition.
-func mustSub(f embed.FS, dir string) fs.FS {
-	sub, err := fs.Sub(f, dir)
-	if err != nil {
-		panic(err)
-	}
-	return sub
-}
-
-// webFS returns the UI filesystem: live from disk in dev so a CSS edit needs
-// only a browser refresh, embedded otherwise so the binary stands alone.
-func webFS(dev bool) (fs.FS, error) {
-	if dev {
-		return os.DirFS("web"), nil
-	}
-	return fs.Sub(embeddedWeb, "web")
 }

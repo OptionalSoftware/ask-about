@@ -58,6 +58,7 @@ func loadPrompts(files fs.FS, product bool, log *slog.Logger) []prompt {
 
 // documentView is the Your Document page.
 type documentView struct {
+	Nav     []navLink
 	Prompts []prompt
 	// Product changes the framing: a person is interviewed about
 	// themselves, a product's owner about the product.
@@ -65,7 +66,7 @@ type documentView struct {
 }
 
 func (s *Server) handleDocument(w http.ResponseWriter, r *http.Request) {
-	s.render(w, "document.html", documentView{Prompts: s.prompts, Product: s.product})
+	s.render(w, "document.html", documentView{Nav: s.nav("/document"), Prompts: s.prompts, Product: s.product})
 }
 
 // handleDocumentPrompt serves one prompt as plain text, for reading in the

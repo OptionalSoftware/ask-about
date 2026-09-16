@@ -38,10 +38,10 @@ type Event struct {
 }
 
 type Pipeline struct {
-	provider llm.Provider
-	guard    Guard
-	observer Observer
-	log      *slog.Logger
+	provider  llm.Provider
+	guard     Guard
+	observers []Observer
+	log       *slog.Logger
 }
 
 func New(provider llm.Provider, guard Guard, log *slog.Logger) *Pipeline {
@@ -59,16 +59,20 @@ func (p *Pipeline) fail(ctx context.Context, out chan<- Event, err error) {
 	p.emit(ctx, out, Event{Kind: EventError, Text: visitorMessage(err)})
 }
 
-// Observe registers a sink for completed runs. Nil disables recording,
-// which is what the tests and any storage-less deployment use.
-func (p *Pipeline) Observe(o Observer) { p.observer = o }
+// Observe adds a sink for completed runs. Each is told in the order added;
+// none is what the tests and any storage-less deployment use.
+func (p *Pipeline) Observe(o Observer) {
+	if o != nil {
+		p.observers = append(p.observers, o)
+	}
+}
 
 // observeTimeout bounds how long recording a finished turn may take. Generous
 // against any real write; the point is that it ends.
 const observeTimeout = 10 * time.Second
 
 func (p *Pipeline) observe(ctx context.Context, req llm.Request, r Result) {
-	if p.observer == nil {
+	if len(p.observers) == 0 {
 		return
 	}
 	// Detached from the request so a client disconnect does not cancel the
@@ -78,7 +82,9 @@ func (p *Pipeline) observe(ctx context.Context, req llm.Request, r Result) {
 	// which is a property of the current backend rather than of this code.
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), observeTimeout)
 	defer cancel()
-	p.observer.RunFinished(ctx, req, r)
+	for _, o := range p.observers {
+		o.RunFinished(ctx, req, r)
+	}
 }
 
 // Result reports what a completed run produced, for the caller to record.

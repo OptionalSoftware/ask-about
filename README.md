@@ -158,7 +158,7 @@ sentence — so they survive being pointed at a different subject.
 
 ## License
 
-Copyright (C) 2026 Optional Software
+Copyright (C) 2026 OptionalSoftware
 
 This program is free software: you can redistribute it and/or modify it
 under the terms of the GNU Affero General Public License as published by the

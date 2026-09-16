@@ -10,6 +10,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"time"
 )
 
@@ -128,6 +129,11 @@ type TurnMatch struct {
 // Store is the persistence seam. Implementations must be safe for concurrent
 // use by multiple goroutines.
 type Store interface {
+	// DB is the open connection, for a caller that keeps its own tables in
+	// the same database. One file, one connection; the caller must not
+	// close it.
+	DB() *sql.DB
+
 	// RecordTurn saves a completed turn. It assigns the ID.
 	RecordTurn(ctx context.Context, t *Turn) error
 

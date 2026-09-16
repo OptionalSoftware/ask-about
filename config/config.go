@@ -633,7 +633,13 @@ func (c Config) validate() error {
 // is tested against this, which is what catches a template that has drifted
 // into something that will not start.
 func (c Config) CheckDeployable() error {
-	hasStore := c.Storage.Path != ""
+	return c.CheckDeployableWithStore(c.Storage.Path != "")
+}
+
+// CheckDeployableWithStore is CheckDeployable for a caller that supplies its
+// own store rather than a storage path, and so knows better than the config
+// whether there is one.
+func (c Config) CheckDeployableWithStore(hasStore bool) error {
 
 	if c.Admin.Enabled() && !hasStore {
 		return fmt.Errorf("admin.username/admin.password are set but storage.path is empty: " +

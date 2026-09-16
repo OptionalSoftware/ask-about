@@ -128,6 +128,8 @@ func OpenSQLite(path string) (Store, error) {
 
 func (s *sqliteStore) Close() error { return s.db.Close() }
 
+func (s *sqliteStore) DB() *sql.DB { return s.db }
+
 func (s *sqliteStore) RecordTurn(ctx context.Context, t *Turn) error {
 	if t.ID == "" {
 		id, err := newID()

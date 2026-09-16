@@ -32,7 +32,15 @@ const Version = "0.2.0"
 // Options is everything Build needs. The first group is what the free
 // binary passes; the second is the seams.
 type Options struct {
+	// ConfigPath is the TOML file to load. Ignored when Config is set.
 	ConfigPath string
+	// Config, when set, is used as loaded — from wherever the caller got it.
+	// It must already validate; Build applies the same deployability checks
+	// either way.
+	Config *config.Config
+	// Store, when set, is used instead of opening the config's storage path,
+	// and is not closed by Close or Run: the caller owns it.
+	Store store.Store
 	// CorpusPath and Addr override the config file when set.
 	CorpusPath string
 	Addr       string
@@ -61,6 +69,9 @@ type Options struct {
 	// loaded from the config's corpus path at startup, for the life of the
 	// process.
 	Documents server.Documents
+	// ReplaceAdminPages makes AdminPages the whole admin, with none of the
+	// built-in pages mounted.
+	ReplaceAdminPages bool
 }
 
 // App is a built, not yet listening, ask-about.
@@ -69,7 +80,18 @@ type App struct {
 	Corpus  *corpus.Corpus
 	Store   store.Store // nil when storage is off
 	Handler http.Handler
-	log     *slog.Logger
+	// ownsStore is whether Build opened Store, and so whether Close closes it.
+	ownsStore bool
+	log       *slog.Logger
+}
+
+// Close releases what Build acquired: the store, if Build opened it. A store
+// supplied through Options is the caller's to close.
+func (a *App) Close() error {
+	if a.ownsStore && a.Store != nil {
+		return a.Store.Close()
+	}
+	return nil
 }
 
 // Build does everything up to listening. It returns an error for anything
@@ -81,15 +103,20 @@ func Build(opts Options) (*App, error) {
 		log = slog.New(slog.NewTextHandler(os.Stderr, nil))
 	}
 
-	cfg, err := config.Load(opts.ConfigPath)
-	if err != nil {
-		return nil, err
-	}
-	// A misspelt key parses fine and then does nothing, so the only symptom is
-	// a feature that appears broken. Say so at startup instead.
-	for _, key := range cfg.Unknown {
-		log.Warn("unrecognised setting in the config file; it has no effect",
-			"key", key, "file", opts.ConfigPath)
+	var cfg config.Config
+	if opts.Config != nil {
+		cfg = *opts.Config
+	} else {
+		var err error
+		if cfg, err = config.Load(opts.ConfigPath); err != nil {
+			return nil, err
+		}
+		// A misspelt key parses fine and then does nothing, so the only
+		// symptom is a feature that appears broken. Say so at startup instead.
+		for _, key := range cfg.Unknown {
+			log.Warn("unrecognised setting in the config file; it has no effect",
+				"key", key, "file", opts.ConfigPath)
+		}
 	}
 	if opts.CorpusPath != "" {
 		cfg.Corpus.Path = opts.CorpusPath
@@ -130,22 +157,28 @@ func Build(opts Options) (*App, error) {
 	}
 
 	// Persistence is optional: an empty storage.path runs the chat with
-	// nothing recorded, which is what the tests and a throwaway run want.
-	var db store.Store
-	if cfg.Storage.Path != "" {
-		db, err = store.OpenSQLite(cfg.Storage.Path)
-		if err != nil {
+	// nothing recorded, which is what the tests and a throwaway run want. A
+	// store supplied by the caller is used as is and stays theirs to close.
+	db, ownsStore := opts.Store, false
+	if db == nil && cfg.Storage.Path != "" {
+		if db, err = store.OpenSQLite(cfg.Storage.Path); err != nil {
 			return nil, err
 		}
-		if err := checkPricing(cfg, log); err != nil {
+		ownsStore = true
+	}
+	closeOwned := func() {
+		if ownsStore {
 			db.Close()
+		}
+	}
+	if db != nil {
+		if err := checkPricing(cfg, log); err != nil {
+			closeOwned()
 			return nil, err
 		}
 	}
-	if err := cfg.CheckDeployable(); err != nil {
-		if db != nil {
-			db.Close()
-		}
+	if err := cfg.CheckDeployableWithStore(db != nil); err != nil {
+		closeOwned()
 		return nil, err
 	}
 
@@ -193,33 +226,30 @@ func Build(opts Options) (*App, error) {
 			Description: cfg.PreviewDescription(),
 			ImagePath:   cfg.PreviewImagePath(),
 		},
-		Access:       cfg.Access,
-		Dev:          opts.Dev,
-		Prompts:      opts.Prompts,
-		TrustedProxy: trusted,
-		AdminAuth:    opts.AdminAuth,
-		AdminPages:   opts.AdminPages,
-		Documents:    opts.Documents,
+		Access:            cfg.Access,
+		Dev:               opts.Dev,
+		Prompts:           opts.Prompts,
+		TrustedProxy:      trusted,
+		AdminAuth:         opts.AdminAuth,
+		AdminPages:        opts.AdminPages,
+		ReplaceAdminPages: opts.ReplaceAdminPages,
+		Documents:         opts.Documents,
 	}, log).Handler()
 	if err != nil {
-		if db != nil {
-			db.Close()
-		}
+		closeOwned()
 		return nil, err
 	}
-	if cfg.Admin.Enabled() && db != nil {
+	if (cfg.Admin.Enabled() || opts.AdminAuth != nil) && db != nil {
 		log.Info("admin enabled", "path", server.Base+"/admin", "restricted_to", cfg.Admin.IP)
 	}
 
-	return &App{Config: cfg, Corpus: c, Store: db, Handler: handler, log: log}, nil
+	return &App{Config: cfg, Corpus: c, Store: db, Handler: handler, ownsStore: ownsStore, log: log}, nil
 }
 
 // Run listens and serves until ctx is cancelled, then shuts down giving
 // in-flight answers ten seconds to finish. It closes the store on return.
 func (a *App) Run(ctx context.Context) error {
-	if a.Store != nil {
-		defer a.Store.Close()
-	}
+	defer a.Close()
 	cfg := a.Config
 
 	srv := &http.Server{

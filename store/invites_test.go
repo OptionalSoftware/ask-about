@@ -714,3 +714,28 @@ func TestPruneTurnsKeepsRecentTurnsAndAllLinks(t *testing.T) {
 		t.Errorf("second prune = %d, %v", n, err)
 	}
 }
+
+// The connection is exposed so a caller can keep its own tables in the same
+// database. It is the live connection, not a copy: a table created through
+// it is visible to the store's own queries and survives.
+func TestDBExposesTheLiveConnection(t *testing.T) {
+	db := testStore(t)
+	conn := db.DB()
+	if conn == nil {
+		t.Fatal("DB() returned nil")
+	}
+	if _, err := conn.Exec(`CREATE TABLE caller_owned (k TEXT PRIMARY KEY, v TEXT)`); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if _, err := conn.Exec(`INSERT INTO caller_owned VALUES ('a', 'b')`); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+	var v string
+	if err := conn.QueryRow(`SELECT v FROM caller_owned WHERE k = 'a'`).Scan(&v); err != nil || v != "b" {
+		t.Errorf("read back %q, %v", v, err)
+	}
+	// The store still works on the same connection.
+	if _, err := db.CreateInvite(t.Context(), "Acme", "", "tok", "hash", nil); err != nil {
+		t.Errorf("store on the shared connection: %v", err)
+	}
+}

@@ -11,8 +11,10 @@ import (
 	"testing"
 	"testing/fstest"
 
+	"github.com/optionalsoftware/ask-about/config"
 	"github.com/optionalsoftware/ask-about/corpus"
 	"github.com/optionalsoftware/ask-about/server"
+	"github.com/optionalsoftware/ask-about/store"
 )
 
 // minimal is a config that builds with nothing on disk: dummy key, storage
@@ -173,5 +175,85 @@ func TestBuildWithSeams(t *testing.T) {
 	docs.c, _ = corpus.Load("", "", "NEWER", "NEWER DOC", corpus.Subject{First: "Y", Full: "Y"})
 	if !strings.Contains(opts.Documents.Current().System(), "NEWER DOC") {
 		t.Error("Documents.Current did not follow the swap")
+	}
+}
+
+// A caller may hand Build a config it loaded itself and a store it opened
+// itself. Build uses both as given, and Close leaves the caller's store open.
+func TestBuildWithSuppliedConfigAndStore(t *testing.T) {
+	dir := t.TempDir()
+	db, err := store.OpenSQLite(filepath.Join(dir, "own.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	cfg := config.Default()
+	cfg.Subject.FirstName, cfg.Subject.LastName = "Dana", "Reed"
+	cfg.LLM.Model, cfg.LLM.APIKeyRaw = "m", "dummy"
+	cfg.Storage.Path = "" // nothing to open: the store is supplied
+	cfg.Admin.Username, cfg.Admin.Password = "admin", "pw"
+
+	opts := base(t)
+	opts.ConfigPath = "/no/such/file.toml" // must be ignored
+	opts.Config = &cfg
+	opts.Store = db
+
+	a, err := Build(opts)
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	if a.Store != db {
+		t.Error("Build did not use the supplied store")
+	}
+	if a.Config.Subject.FullName() != "Dana Reed" {
+		t.Error("Build did not use the supplied config")
+	}
+	if err := a.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	// Still open: the caller owns it.
+	if _, err := db.CreateInvite(t.Context(), "Acme", "", "tok", "hash", nil); err != nil {
+		t.Errorf("Close closed a store it did not open: %v", err)
+	}
+	// And the admin pages are up, on the supplied store.
+	if w := get(a.Handler, "/ask-about/admin", true); w.Code != http.StatusOK {
+		t.Errorf("admin on supplied store = %d", w.Code)
+	}
+}
+
+// With ReplaceAdminPages the built-in admin is not mounted at all — no Links,
+// no Your Document, no prompts — and a supplied authenticator is enough to
+// mount the caller's pages without any [admin] credentials configured.
+func TestReplaceAdminPages(t *testing.T) {
+	opts := base(t)
+	cfg, err := config.Load(opts.ConfigPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Admin.Username, cfg.Admin.Password = "", "" // no built-in auth configured
+	opts.Config = &cfg
+	opts.AdminAuth = allow{}
+	opts.ReplaceAdminPages = true
+	opts.AdminPages = []server.AdminPage{{
+		Title: "Dashboard", Path: "",
+		Routes: map[string]http.Handler{"GET ": http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			io.WriteString(w, "PRO DASHBOARD")
+		})},
+	}}
+
+	a, err := Build(opts)
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	defer a.Close()
+
+	if w := get(a.Handler, "/ask-about/admin", false); w.Code != http.StatusOK || w.Body.String() != "PRO DASHBOARD" {
+		t.Errorf("admin root = %d %q", w.Code, w.Body.String())
+	}
+	for _, path := range []string{"/ask-about/admin/document", "/ask-about/admin/document/ic", "/ask-about/admin/links/x"} {
+		if w := get(a.Handler, path, false); w.Code != http.StatusNotFound {
+			t.Errorf("built-in %s still mounted: %d", path, w.Code)
+		}
 	}
 }

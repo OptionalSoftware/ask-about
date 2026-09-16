@@ -109,8 +109,12 @@ type Options struct {
 	// [admin] credentials, the lockout, and the address allowlist.
 	AdminAuth Authenticator
 	// AdminPages are mounted behind AdminAuth after the built-in Links and
-	// Your Document pages, and listed in the admin navigation in order.
+	// Your Document pages, and listed in the admin navigation in order — or,
+	// with ReplaceAdminPages, instead of them.
 	AdminPages []AdminPage
+	// ReplaceAdminPages drops the built-in admin pages so AdminPages is the
+	// whole admin: a caller with its own admin mounts nothing of this one.
+	ReplaceAdminPages bool
 	// Documents supplies the document every answer comes from. Nil serves
 	// the corpus passed to New for the life of the process.
 	Documents Documents
@@ -172,7 +176,11 @@ func New(pipe *pipeline.Pipeline, c *corpus.Corpus, web fs.FS, opts Options, log
 		adminAuth:     opts.AdminAuth,
 		log:           log,
 	}
-	s.pages = append(s.builtinPages(), opts.AdminPages...)
+	if opts.ReplaceAdminPages {
+		s.pages = opts.AdminPages
+	} else {
+		s.pages = append(s.builtinPages(), opts.AdminPages...)
+	}
 	return s
 }
 

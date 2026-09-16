@@ -393,10 +393,12 @@ func (s *Server) builtinPages() []AdminPage {
 }
 
 // adminRoutes registers the admin surface behind auth. Nothing is registered
-// when admin is disabled or storage is off, so an unconfigured deploy has no
-// admin surface to find rather than one that merely refuses.
+// when storage is off, or when admin is not configured and no authenticator
+// was supplied — so an unconfigured deploy has no admin surface to find
+// rather than one that merely refuses. A supplied authenticator is its own
+// configuration: the caller has decided who gets in.
 func (s *Server) adminRoutes(mux *http.ServeMux, cfg config.Admin) error {
-	if !cfg.Enabled() || s.store == nil {
+	if s.store == nil || (!cfg.Enabled() && s.adminAuth == nil) {
 		return nil
 	}
 	auth := s.adminAuth

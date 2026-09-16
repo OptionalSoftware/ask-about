@@ -4,9 +4,9 @@ import (
 	"context"
 	"log/slog"
 
-	"github.com/optionalsoftware/ask-about/internal/config"
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
+	"github.com/optionalsoftware/ask-about/internal/config"
 )
 
 type anthropicProvider struct {

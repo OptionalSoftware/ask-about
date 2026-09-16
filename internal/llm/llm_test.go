@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/optionalsoftware/ask-about/internal/config"
 	"github.com/anthropics/anthropic-sdk-go"
+	"github.com/optionalsoftware/ask-about/internal/config"
 )
 
 // New picks the adapter and refuses what it cannot build. No network call:

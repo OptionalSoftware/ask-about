@@ -155,3 +155,12 @@ They use `{{firstName}}`, `{{lastName}}` and `{{fullName}}`, plus the pronoun
 placeholders `{{they}}`, `{{them}}`, `{{their}}`, `{{theirs}}` and
 `{{themselves}}` — each also capitalised, as `{{They}}`, for the start of a
 sentence — so they survive being pointed at a different subject.
+
+## License
+
+Copyright (C) 2026 Optional Software
+
+This program is free software: you can redistribute it and/or modify it
+under the terms of the GNU Affero General Public License as published by the
+Free Software Foundation, either version 3 of the License, or (at your
+option) any later version. See [LICENSE](LICENSE) for the full text.

@@ -3,9 +3,9 @@ package llm
 import (
 	"context"
 
-	"github.com/optionalsoftware/ask-about/internal/config"
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"
+	"github.com/optionalsoftware/ask-about/internal/config"
 )
 
 // openaiProvider covers every OpenAI-compatible API, not just OpenAI: xAI

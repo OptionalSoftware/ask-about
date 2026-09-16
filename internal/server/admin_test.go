@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"net/url"
 	"path/filepath"
 	"strings"
@@ -18,19 +19,33 @@ import (
 
 func testServer(t *testing.T, admin config.Admin) (http.Handler, store.Store) {
 	t.Helper()
+	return testServerOpts(t, Options{Admin: admin})
+}
+
+// testServerOpts builds a server with a fresh store and whatever else opts
+// carries. opts.Store is always replaced.
+func testServerOpts(t *testing.T, opts Options) (http.Handler, store.Store) {
+	t.Helper()
 	db, err := store.OpenSQLite(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
 	t.Cleanup(func() { db.Close() })
+	opts.Store = db
 
-	s := New(nil, nil, fstest.MapFS{}, Options{Store: db, Admin: admin},
-		slog.New(slog.NewTextHandler(io.Discard, nil)))
+	s := New(nil, nil, fstest.MapFS{}, opts, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	h, err := s.Handler()
 	if err != nil {
 		t.Fatalf("handler: %v", err)
 	}
 	return h, db
+}
+
+// loopback is the trusted proxy the deploy guide assumes: nginx on the same
+// machine.
+func loopback() *netip.Prefix {
+	p := netip.MustParsePrefix("127.0.0.1/32")
+	return &p
 }
 
 const (
@@ -103,44 +118,56 @@ func TestAdminAddressRestriction(t *testing.T) {
 }
 
 // Behind a proxy the connecting address is the proxy's, so the client comes
-// from X-Forwarded-For. ask-about has to work both ways: straight on the internet,
-// and behind nginx.
+// from X-Forwarded-For — but only when the connection really is from the
+// configured proxy. ask-about has to work both ways: straight on the
+// internet, and behind nginx.
 func TestAdminAddressBehindAProxy(t *testing.T) {
 	const proxy = "127.0.0.1:9000"
 
 	tests := []struct {
 		name, allow, remote, forwarded string
+		trust                          *netip.Prefix
 		want                           int
 	}{
 		// No proxy in front: the connection address is the client.
-		{"direct, allowed", "203.0.113.5", "203.0.113.5:9000", "", http.StatusOK},
-		{"direct, refused", "203.0.113.5", "198.51.100.9:9000", "", http.StatusForbidden},
+		{"direct, allowed", "203.0.113.5", "203.0.113.5:9000", "", nil, http.StatusOK},
+		{"direct, refused", "203.0.113.5", "198.51.100.9:9000", "", nil, http.StatusForbidden},
 
-		// Behind one proxy. Without reading the header this would refuse
-		// everyone, since every request arrives from 127.0.0.1.
-		{"proxied, allowed", "203.0.113.5", proxy, "203.0.113.5", http.StatusOK},
-		{"proxied, refused", "203.0.113.5", proxy, "198.51.100.9", http.StatusForbidden},
+		// Behind the trusted proxy. Without reading the header this would
+		// refuse everyone, since every request arrives from 127.0.0.1.
+		{"proxied, allowed", "203.0.113.5", proxy, "203.0.113.5", loopback(), http.StatusOK},
+		{"proxied, refused", "203.0.113.5", proxy, "198.51.100.9", loopback(), http.StatusForbidden},
 
 		// nginx APPENDS what it saw, so the rightmost entry is the one it
 		// vouches for. Everything left of it is whatever the caller claimed —
 		// reading the leftmost, which is the usual mistake, would take the
 		// forgery instead.
 		{"claimed address ignored", "203.0.113.5",
-			proxy, "203.0.113.5, 198.51.100.9", http.StatusForbidden},
+			proxy, "203.0.113.5, 198.51.100.9", loopback(), http.StatusForbidden},
 		{"real address found past a claim", "203.0.113.5",
-			proxy, "198.51.100.9, 203.0.113.5", http.StatusOK},
+			proxy, "198.51.100.9, 203.0.113.5", loopback(), http.StatusOK},
+
+		// The header from anyone but the trusted proxy is a forgery and is
+		// ignored: a caller reaching the binary directly cannot pick an
+		// address, which is what the allowlist and the lockout count on.
+		{"no proxy configured, header ignored", "203.0.113.5",
+			proxy, "203.0.113.5", nil, http.StatusForbidden},
+		{"header from an untrusted address ignored", "203.0.113.5",
+			"198.51.100.9:9000", "203.0.113.5", loopback(), http.StatusForbidden},
+		{"trusted proxy is a block", "203.0.113.5",
+			"10.0.0.7:9000", "203.0.113.5", func() *netip.Prefix { p := netip.MustParsePrefix("10.0.0.0/8"); return &p }(), http.StatusOK},
 
 		// A header that is not an address falls back to the connection, rather
 		// than refusing everyone because something upstream sent nonsense.
 		{"junk header, connection allowed", "203.0.113.5",
-			"203.0.113.5:9000", "not-an-address", http.StatusOK},
+			"203.0.113.5:9000", "not-an-address", loopback(), http.StatusOK},
 		{"junk header, connection refused", "203.0.113.5",
-			"198.51.100.9:9000", "not-an-address", http.StatusForbidden},
+			"198.51.100.9:9000", "not-an-address", loopback(), http.StatusForbidden},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			h, _ := testServer(t, enabledAdmin(tc.allow))
+			h, _ := testServerOpts(t, Options{Admin: enabledAdmin(tc.allow), TrustedProxy: tc.trust})
 			r := httptest.NewRequest("GET", "/ask-about/admin", nil)
 			r.RemoteAddr = tc.remote
 			if tc.forwarded != "" {
@@ -160,7 +187,7 @@ func TestAdminAddressBehindAProxy(t *testing.T) {
 // The address is one of three things a request has to get right. Getting it
 // right is not on its own enough.
 func TestAdminAddressIsNotEnough(t *testing.T) {
-	h, _ := testServer(t, enabledAdmin("203.0.113.5"))
+	h, _ := testServerOpts(t, Options{Admin: enabledAdmin("203.0.113.5"), TrustedProxy: loopback()})
 	r := httptest.NewRequest("GET", "/ask-about/admin", nil)
 	r.RemoteAddr = "127.0.0.1:9000"
 	r.Header.Set("X-Forwarded-For", "203.0.113.5")
@@ -388,5 +415,91 @@ func TestSpendStripDistinguishesUnusedFromUnpriced(t *testing.T) {
 	}
 	if v := s.buildSpend(t.Context()); v == nil || v.Priced {
 		t.Fatalf("unpriced usage: Priced = %v, want false (reads \"no rates\")", v != nil && v.Priced)
+	}
+}
+
+// The Your Document page hands out the interview prompts for this kind of
+// subject, behind the same login as the rest of admin.
+func TestDocumentPageListsPromptsForTheKind(t *testing.T) {
+	files := fstest.MapFS{
+		"interview-ic.md":        &fstest.MapFile{Data: []byte("IC PROMPT")},
+		"interview-senior-ic.md": &fstest.MapFile{Data: []byte("SENIOR PROMPT")},
+		"interview-manager.md":   &fstest.MapFile{Data: []byte("MANAGER PROMPT")},
+		"interview-executive.md": &fstest.MapFile{Data: []byte("EXEC PROMPT")},
+		"interview-product.md":   &fstest.MapFile{Data: []byte("PRODUCT PROMPT")},
+		"interview-company.md":   &fstest.MapFile{Data: []byte("COMPANY PROMPT")},
+	}
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	build := func(subject config.Subject) http.Handler {
+		db, err := store.OpenSQLite(filepath.Join(t.TempDir(), "test.db"))
+		if err != nil {
+			t.Fatalf("open store: %v", err)
+		}
+		t.Cleanup(func() { db.Close() })
+		h, err := New(nil, nil, fstest.MapFS{}, Options{
+			Store: db, Admin: enabledAdmin(""), Subject: subject, Prompts: files,
+		}, log).Handler()
+		if err != nil {
+			t.Fatalf("handler: %v", err)
+		}
+		return h
+	}
+	get := func(h http.Handler, path string, auth bool) *httptest.ResponseRecorder {
+		r := httptest.NewRequest("GET", path, nil)
+		if auth {
+			r.SetBasicAuth(testUser, testPass)
+		}
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w
+	}
+
+	person := build(config.Subject{FirstName: "Dana", LastName: "Reed"})
+	if w := get(person, "/ask-about/admin/document", false); w.Code != http.StatusUnauthorized {
+		t.Errorf("page without credentials = %d, want 401", w.Code)
+	}
+	if w := get(person, "/ask-about/admin/document/ic", false); w.Code != http.StatusUnauthorized {
+		t.Errorf("prompt without credentials = %d, want 401", w.Code)
+	}
+	w := get(person, "/ask-about/admin/document", true)
+	if w.Code != http.StatusOK {
+		t.Fatalf("page = %d", w.Code)
+	}
+	body := w.Body.String()
+	for _, want := range []string{"Individual Contributor", "Senior Individual Contributor", "Manager", "Executive", "Your Document"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("person page lacks %q", want)
+		}
+	}
+	if strings.Contains(body, "Product or Service") {
+		t.Error("person page offers the product prompt")
+	}
+	if w := get(person, "/ask-about/admin/document/manager", true); w.Code != http.StatusOK || w.Body.String() != "MANAGER PROMPT" {
+		t.Errorf("manager prompt = %d %q", w.Code, w.Body.String())
+	}
+	// A prompt for the other kind is not served, nor is nonsense.
+	for _, slug := range []string{"product", "nope"} {
+		if w := get(person, "/ask-about/admin/document/"+slug, true); w.Code != http.StatusNotFound {
+			t.Errorf("%s on a person site = %d, want 404", slug, w.Code)
+		}
+	}
+
+	product := build(config.Subject{Kind: config.KindProduct, Name: "Larkspur Desk"})
+	body = get(product, "/ask-about/admin/document", true).Body.String()
+	for _, want := range []string{"Product or Service", "Company or Organisation"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("product page lacks %q", want)
+		}
+	}
+	if strings.Contains(body, "Individual Contributor") || strings.Contains(body, "Level, not discipline") {
+		t.Error("product page offers person prompts or the level note")
+	}
+	if w := get(product, "/ask-about/admin/document/company", true); w.Body.String() != "COMPANY PROMPT" {
+		t.Errorf("company prompt = %q", w.Body.String())
+	}
+
+	// The nav is on the links page too, pointing at this one.
+	if body := get(person, "/ask-about/admin", true).Body.String(); !strings.Contains(body, `href="/ask-about/admin/document"`) {
+		t.Error("the links page has no way to reach Your Document")
 	}
 }

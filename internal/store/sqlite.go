@@ -162,6 +162,17 @@ func (s *sqliteStore) RecordTurn(ctx context.Context, t *Turn) error {
 	return nil
 }
 
+// PruneTurns is the retention window. Turns are the only thing that holds
+// what a visitor typed, so they are the only thing that expires.
+func (s *sqliteStore) PruneTurns(ctx context.Context, before time.Time) (int64, error) {
+	res, err := s.db.ExecContext(ctx, `DELETE FROM turns WHERE asked_at < ?`, utc(before))
+	if err != nil {
+		return 0, fmt.Errorf("store: prune turns: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	return n, nil
+}
+
 func utc(t time.Time) string { return t.UTC().Format(time.RFC3339Nano) }
 
 func newID() (string, error) {

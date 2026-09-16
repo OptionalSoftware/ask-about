@@ -680,3 +680,37 @@ func TestSearchEscapesWildcards(t *testing.T) {
 		t.Errorf(`"_" matched %d rows, want 0 — it is a wildcard unescaped`, len(got))
 	}
 }
+
+// The retention window deletes turns and nothing else: a contact's links
+// survive, and so do turns inside the window.
+func TestPruneTurnsKeepsRecentTurnsAndAllLinks(t *testing.T) {
+	db := testStore(t)
+	ctx := t.Context()
+	inv, _ := db.CreateInvite(ctx, "Acme Corp", "", "tok", "hash-1", nil)
+	now := time.Now()
+	for _, age := range []time.Duration{40 * 24 * time.Hour, 20 * 24 * time.Hour, time.Hour} {
+		if err := db.RecordTurn(ctx, &Turn{InviteID: inv.ID, SessionID: "v1",
+			Question: "q", Answer: "a", Usage: Usage{Model: "m"}, AskedAt: now.Add(-age)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	n, err := db.PruneTurns(ctx, now.AddDate(0, 0, -30))
+	if err != nil {
+		t.Fatalf("prune: %v", err)
+	}
+	if n != 1 {
+		t.Errorf("pruned %d, want the one older than 30 days", n)
+	}
+	turns, _ := db.TurnsForSession(ctx, "v1", 10)
+	if len(turns) != 2 {
+		t.Errorf("%d turns left, want 2", len(turns))
+	}
+	contacts, _ := db.ListContacts(ctx)
+	if len(contacts) != 1 || len(contacts[0].Invites) != 1 {
+		t.Error("pruning turns touched contacts or links")
+	}
+	// Nothing older: a second prune is a no-op, not an error.
+	if n, err := db.PruneTurns(ctx, now.AddDate(0, 0, -30)); err != nil || n != 0 {
+		t.Errorf("second prune = %d, %v", n, err)
+	}
+}

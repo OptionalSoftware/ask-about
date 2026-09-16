@@ -23,11 +23,12 @@ type adminAuth struct {
 	user, pass []byte
 	allowed    netip.Prefix
 	restricted bool
+	trusted    *netip.Prefix
 	lock       *lockout
 	log        *slog.Logger
 }
 
-func newAdminAuth(cfg config.Admin, log *slog.Logger) (*adminAuth, error) {
+func newAdminAuth(cfg config.Admin, trusted *netip.Prefix, log *slog.Logger) (*adminAuth, error) {
 	allowed, restricted, err := cfg.AllowedNet()
 	if err != nil {
 		return nil, err
@@ -37,6 +38,7 @@ func newAdminAuth(cfg config.Admin, log *slog.Logger) (*adminAuth, error) {
 		pass:       []byte(cfg.Password),
 		allowed:    allowed,
 		restricted: restricted,
+		trusted:    trusted,
 		lock:       newLockout(cfg.MaxAttempts, config.LockoutWindow),
 		log:        log,
 	}, nil
@@ -48,7 +50,7 @@ func (a *adminAuth) wrap(next http.Handler) http.Handler {
 			// Logged with the address as seen, because the usual way to be
 			// locked out is admin.ip holding an address that is not the one
 			// arriving. This line is what tells you which to put there.
-			seen, _ := clientAddr(r)
+			seen, _ := clientAddr(r, a.trusted)
 			a.log.Warn("admin request from disallowed address",
 				"client", seen.String(), "allowed", a.allowed.String(),
 				"remote", r.RemoteAddr, "forwarded_for", r.Header.Get("X-Forwarded-For"),
@@ -56,7 +58,7 @@ func (a *adminAuth) wrap(next http.Handler) http.Handler {
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
-		addr, _ := clientAddr(r)
+		addr, _ := clientAddr(r, a.trusted)
 
 		if a.lock.lockedOut(addr) {
 			a.log.Warn("admin login locked out", "client", addr.String())
@@ -96,39 +98,44 @@ func (a *adminAuth) addressAllowed(r *http.Request) bool {
 	if !a.restricted {
 		return true
 	}
-	addr, ok := clientAddr(r)
+	addr, ok := clientAddr(r, a.trusted)
 	if !ok {
 		return false
 	}
 	return a.allowed.Contains(addr.Unmap())
 }
 
-// clientAddr works out who is actually calling, whether ask-about is on the internet
-// by itself or behind a proxy.
+// clientAddr works out who is actually calling, whether ask-about is on the
+// internet by itself or behind a proxy.
 //
-// With no X-Forwarded-For the connection address is the client. With one, the
-// RIGHTMOST entry is used: a proxy appends the address it saw, so the last
-// entry is the one it vouches for and everything to its left is whatever the
-// caller claimed. Reading the leftmost — which is the common mistake — would
-// take the client's own assertion instead.
+// The connection address is the client unless the connection comes from the
+// trusted proxy, in which case X-Forwarded-For is read — its RIGHTMOST entry,
+// because a proxy appends the address it saw, so the last entry is the one it
+// vouches for and everything to its left is whatever the caller claimed.
+// Reading the leftmost, the common mistake, would take the forgery.
 //
-// A caller reaching ask-about directly can still put anything in the header. That is
-// accepted: admin.ip is one of three things a request has to get right, and
-// someone who already has the username and password is not the case it is
-// there for.
-func clientAddr(r *http.Request) (netip.Addr, bool) {
+// With no trusted proxy configured the header is ignored entirely. Believing
+// it from anyone would let a caller who reaches the binary directly pick a
+// fresh address per request, which is exactly what the lockout counts on.
+func clientAddr(r *http.Request, trusted *netip.Prefix) (netip.Addr, bool) {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		host = r.RemoteAddr
+	}
+	conn, err := netip.ParseAddr(host)
+	if err != nil {
+		return conn, false
+	}
+	if trusted == nil || !trusted.Contains(conn.Unmap()) {
+		return conn, true
+	}
 	if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
 		parts := strings.Split(fwd, ",")
 		if addr, err := netip.ParseAddr(strings.TrimSpace(parts[len(parts)-1])); err == nil {
 			return addr, true
 		}
 	}
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		host = r.RemoteAddr
-	}
-	addr, err := netip.ParseAddr(host)
-	return addr, err == nil
+	return conn, true
 }
 
 // credentialsMatch compares in constant time, and hashes first so that the

@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"net/netip"
 	"strings"
 
 	"github.com/optionalsoftware/ask-about/internal/config"
@@ -73,7 +74,11 @@ type Server struct {
 	// dev serves web/ from disk, so index.html is reparsed per request.
 	dev   bool
 	index indexTemplate
-	log   *slog.Logger
+	// prompts are the interview prompts for this subject's kind, loaded once.
+	prompts []prompt
+	product bool
+	trusted *netip.Prefix
+	log     *slog.Logger
 }
 
 type Options struct {
@@ -87,6 +92,12 @@ type Options struct {
 	Preview   Preview
 	Access    config.Access
 	Dev       bool
+	// Prompts holds the interview prompts, one file per entry in the
+	// catalogue in document.go, for the admin page that hands them out.
+	Prompts fs.FS
+	// TrustedProxy is the only source X-Forwarded-For is believed from. Nil
+	// means the connecting address is always the client.
+	TrustedProxy *netip.Prefix
 }
 
 func New(pipe *pipeline.Pipeline, c *corpus.Corpus, web fs.FS, opts Options, log *slog.Logger) *Server {
@@ -105,6 +116,9 @@ func New(pipe *pipeline.Pipeline, c *corpus.Corpus, web fs.FS, opts Options, log
 		dayCapMsg:     opts.Access.DayCapDenied(),
 		favicon:       buildFavicon(opts.Subject),
 		dev:           opts.Dev,
+		prompts:       loadPrompts(opts.Prompts, opts.Subject.IsProduct(), log),
+		product:       opts.Subject.IsProduct(),
+		trusted:       opts.TrustedProxy,
 		log:           log,
 	}
 }

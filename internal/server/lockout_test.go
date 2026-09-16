@@ -208,3 +208,27 @@ func TestAdminAllowsPostWithNoOrigin(t *testing.T) {
 		t.Errorf("got %d contacts, want 1", len(contacts))
 	}
 }
+
+// A caller who reaches the binary directly cannot dodge the lockout by
+// sending a different X-Forwarded-For each time: with no trusted proxy the
+// header is ignored and every attempt counts against the real address.
+func TestLockoutIgnoresForgedForwardedFor(t *testing.T) {
+	h, _ := testServer(t, config.Admin{Username: testUser, Password: testPass, MaxAttempts: 3})
+	attempt := func(forged string) int {
+		r := httptest.NewRequest("GET", "/ask-about/admin", nil)
+		r.RemoteAddr = "198.51.100.9:9000"
+		r.Header.Set("X-Forwarded-For", forged)
+		r.SetBasicAuth(testUser, "wrong")
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w.Code
+	}
+	for i := 1; i <= 3; i++ {
+		if got := attempt("203.0.113." + string(rune('0'+i))); got != http.StatusUnauthorized {
+			t.Fatalf("attempt %d = %d, want 401", i, got)
+		}
+	}
+	if got := attempt("203.0.113.9"); got != http.StatusTooManyRequests {
+		t.Errorf("fourth attempt with yet another forged address = %d, want 429", got)
+	}
+}

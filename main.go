@@ -15,6 +15,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/netip"
 	"os"
 	"os/signal"
 	"syscall"
@@ -42,6 +43,11 @@ var embeddedPersonPersona string
 
 //go:embed prompts/product.md
 var embeddedProductPersona string
+
+// The interview prompts the admin page hands out, one per kind of subject.
+//
+//go:embed prompts/interview-*.md
+var embeddedPrompts embed.FS
 
 func main() {
 	var (
@@ -136,6 +142,17 @@ func run(log *slog.Logger, configPath, corpusPath, addr string, dev bool) error 
 		return err
 	}
 
+	// X-Forwarded-For is only believed from the configured proxy. Say so at
+	// startup when nothing is configured and it would matter: the admin
+	// allowlist and the lockout would otherwise see every client as the proxy.
+	var trusted *netip.Prefix
+	if p, ok, _ := cfg.Server.TrustedNet(); ok {
+		trusted = &p
+	} else if cfg.Admin.Enabled() {
+		log.Warn("server.trusted_proxy is not set: X-Forwarded-For is ignored and " +
+			"every request behind a proxy appears to come from the proxy")
+	}
+
 	// No guard is implemented. The stage still runs — see pipeline.Guard.
 	var guard pipeline.Guard = pipeline.PassThrough{}
 
@@ -168,8 +185,10 @@ func run(log *slog.Logger, configPath, corpusPath, addr string, dev bool) error 
 			Description: cfg.PreviewDescription(),
 			ImagePath:   cfg.PreviewImagePath(),
 		},
-		Access: cfg.Access,
-		Dev:    dev,
+		Access:       cfg.Access,
+		Dev:          dev,
+		Prompts:      mustSub(embeddedPrompts, "prompts"),
+		TrustedProxy: trusted,
 	}, log).Handler()
 	if err != nil {
 		return err
@@ -194,6 +213,10 @@ func run(log *slog.Logger, configPath, corpusPath, addr string, dev bool) error 
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	if db != nil && cfg.Storage.RetainDays > 0 {
+		go pruneLoop(ctx, db, cfg.Storage.RetainDays, log)
+	}
 
 	log.Info("listening",
 		"addr", ln.Addr().String(),
@@ -221,6 +244,35 @@ func run(log *slog.Logger, configPath, corpusPath, addr string, dev bool) error 
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		return srv.Shutdown(shutdownCtx)
+	}
+}
+
+// pruneLoop applies the retention window: once at startup, then daily. A
+// failed prune is logged and retried next round rather than stopping the
+// server — old rows are a housekeeping problem, not an availability one.
+func pruneLoop(ctx context.Context, db store.Store, days int, log *slog.Logger) {
+	prune := func() {
+		before := time.Now().AddDate(0, 0, -days)
+		n, err := db.PruneTurns(ctx, before)
+		switch {
+		case err != nil && ctx.Err() != nil:
+			// Shutting down mid-prune; the next start finishes the job.
+		case err != nil:
+			log.Error("could not prune old turns", "err", err)
+		case n > 0:
+			log.Info("pruned old turns", "count", n, "older_than_days", days)
+		}
+	}
+	prune()
+	t := time.NewTicker(24 * time.Hour)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			prune()
+		}
 	}
 }
 
@@ -262,6 +314,16 @@ func checkPricing(cfg config.Config, log *slog.Logger) error {
 			"model", cfg.LLM.Model)
 	}
 	return nil
+}
+
+// mustSub roots an embedded filesystem at dir. The directory is a compile-time
+// literal, so a failure here is a build mistake, not a runtime condition.
+func mustSub(f embed.FS, dir string) fs.FS {
+	sub, err := fs.Sub(f, dir)
+	if err != nil {
+		panic(err)
+	}
+	return sub
 }
 
 // webFS returns the UI filesystem: live from disk in dev so a CSS edit needs

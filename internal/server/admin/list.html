@@ -9,7 +9,8 @@
 </head>
 <body>
 <main>
-  <h1>Links <span class="muted">&middot; ask-about</span></h1>
+  {{template "nav" "links"}}
+  <h1>Links</h1>
 
   {{if .Error}}
     <section class="error"><strong>{{.Error}}</strong></section>

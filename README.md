@@ -45,9 +45,39 @@ mkdir -p private && cp docs/content.md private/content.md
 fallback. Editing it in place puts a real person's history in a tracked file,
 which is the one mistake this layout exists to prevent.
 
+### Writing Your Document
+
+The document is more than a resume — it needs the stories, numbers and ways
+of working a resume leaves out. Rather than writing it cold, have an AI
+interview you for it. The admin page has a **Your Document** tab with the
+prompts and a copy button; the same files are here:
+
+1. Pick the prompt for your level and open it:
+
+   | Prompt | For |
+   |---|---|
+   | [`prompts/interview-ic.md`](prompts/interview-ic.md) | an individual contributor — your work is the thing you build or deliver |
+   | [`prompts/interview-senior-ic.md`](prompts/interview-senior-ic.md) | staff, principal, or the equivalent — you set direction across teams without owning the headcount |
+   | [`prompts/interview-manager.md`](prompts/interview-manager.md) | you run one team |
+   | [`prompts/interview-executive.md`](prompts/interview-executive.md) | you run an organisation of teams and manage other leaders |
+
+   Level, not discipline: a product manager and an engineer at the same
+   level use the same prompt. For a product or service there is
+   [`prompts/interview-product.md`](prompts/interview-product.md), and for a
+   company or organisation [`prompts/interview-company.md`](prompts/interview-company.md).
+2. Open Claude, ChatGPT, or whatever you use, and paste in the whole file.
+   It asks for your resume, then interviews you one question at a time,
+   printing each section as it goes.
+3. Say **done**. Copy the document it prints into `private/content.md`.
+
+It takes half an hour to an hour. The prompt is strict about only writing
+what you said and keeping figures and dates exact, because that is what the
+assistant will be held to later.
+
 ### A product or a company instead of a person
 
-The product and company examples set `kind = "product"` and a single `name`,
+The product and company examples set `kind = "product"` or `kind = "company"`
+— the two behave the same — and a single `name`,
 point the corpus at `docs/product.md` or `docs/company.md` — fictional samples
 to try with — and switch the synthetic presenter off so `photo` is shown
 plainly as a logo. The assistant then uses a persona written for a product,

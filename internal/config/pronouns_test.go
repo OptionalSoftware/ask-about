@@ -136,6 +136,14 @@ func TestKindIsValidated(t *testing.T) {
 	if err := cfg.validate(); err != nil {
 		t.Errorf("a valid product config was refused: %v", err)
 	}
+	// "company" is what people write for a company; it is a product to the code.
+	cfg.Subject.Kind = KindCompany
+	if err := cfg.validate(); err != nil {
+		t.Errorf("kind = company was refused: %v", err)
+	}
+	if !cfg.Subject.IsProduct() || cfg.Subject.PersonaFile() != "prompts/product.md" {
+		t.Error("kind = company does not behave as a product")
+	}
 	// A subject with no name at all renders "Ask about " on the page.
 	cfg = Default()
 	cfg.Subject.FirstName, cfg.Subject.LastName = "", ""
@@ -224,5 +232,28 @@ func TestPartialSubjectDoesNotInheritDefaultNames(t *testing.T) {
 	}
 	if _, err := Load(path); err == nil || !strings.Contains(err.Error(), "no name") {
 		t.Errorf("nameless [subject] was accepted: %v", err)
+	}
+}
+
+// The two hardening settings are checked at load, so a typo is a startup
+// error rather than a proxy that is silently never trusted or a window that
+// never prunes.
+func TestProxyAndRetentionAreValidated(t *testing.T) {
+	cfg := Default()
+	cfg.Server.TrustedProxy = "not-an-address"
+	if err := cfg.validate(); err == nil || !strings.Contains(err.Error(), "server.trusted_proxy") {
+		t.Errorf("bad trusted_proxy accepted: %v", err)
+	}
+	for _, ok := range []string{"", "127.0.0.1", "10.0.0.0/8", "::1"} {
+		cfg = Default()
+		cfg.Server.TrustedProxy = ok
+		if err := cfg.validate(); err != nil {
+			t.Errorf("trusted_proxy %q refused: %v", ok, err)
+		}
+	}
+	cfg = Default()
+	cfg.Storage.RetainDays = -1
+	if err := cfg.validate(); err == nil || !strings.Contains(err.Error(), "retain_days") {
+		t.Errorf("negative retain_days accepted: %v", err)
 	}
 }

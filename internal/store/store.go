@@ -131,6 +131,10 @@ type Store interface {
 	// RecordTurn saves a completed turn. It assigns the ID.
 	RecordTurn(ctx context.Context, t *Turn) error
 
+	// PruneTurns deletes turns asked before the given moment and reports how
+	// many went. Links and contacts are untouched.
+	PruneTurns(ctx context.Context, before time.Time) (int64, error)
+
 	// CreateInvite records a link for the named contact, creating the contact
 	// on first sight and reusing it afterwards — so a replacement link lands
 	// under the same name rather than forking the history. It assigns the IDs.

@@ -59,7 +59,9 @@ sudo cp deploy/ask-about_locations.conf /etc/nginx/ask-about_locations.conf
 ```
 
 Set the upstream port in `ask-about_http.conf`, then add one line inside the `server`
-block that should serve ask-about:
+block that should serve ask-about. In `config.toml`, `server.trusted_proxy`
+must name the machine nginx runs on — the examples ship with `127.0.0.1`,
+which is right for this layout — or every visitor will appear to be nginx:
 
 ```nginx
 include /etc/nginx/ask-about_locations.conf;

@@ -17,6 +17,35 @@
   main { max-width: 62rem; margin: 0 auto; }
   a { color: var(--accent); }
   h1 { font-size: 1.25rem; margin: 0 0 1.5rem; font-weight: 600; }
+
+  /* Top navigation, the same on every admin page. */
+  nav.top { display: flex; gap: 1.25rem; align-items: baseline;
+            margin-bottom: 1.5rem; padding-bottom: .75rem;
+            border-bottom: 1px solid var(--line); }
+  nav.top .brand { font-weight: 600; margin-right: .5rem; }
+  nav.top a { color: var(--dim); text-decoration: none; font-size: .95rem;
+              padding-bottom: .5rem; margin-bottom: -.8rem; }
+  nav.top a.on { color: var(--ink); border-bottom: 2px solid var(--accent); }
+  nav.top a:hover { color: var(--ink); }
+
+  /* Prompt cards on the Your Document page. */
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+           gap: 1rem; }
+  .card { border: 1px solid var(--line); border-radius: 8px; padding: 1rem 1.1rem;
+          background: var(--sunk); display: flex; flex-direction: column; }
+  .card h3 { margin: 0 0 .25rem; font-size: 1rem; font-weight: 600; }
+  .card p { margin: 0 0 1rem; color: var(--dim); font-size: .85rem; flex: 1; }
+  .card .actions { display: flex; gap: .75rem; align-items: center; }
+  .card button { padding: .45rem .8rem; font-size: .85rem; }
+  .card a { font-size: .85rem; }
+  .intro { color: var(--dim); max-width: 60ch; margin: 0 0 1.25rem; }
+  .intro code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+                font-size: .85em; color: var(--ink); }
+  .foot { color: var(--dim); font-size: .8rem; margin: 1rem 0 0; }
+  .prompt-text { width: 100%; height: 12rem; margin-top: .75rem; resize: vertical;
+                 background: var(--sunk); color: var(--ink); border: 1px solid var(--line);
+                 border-radius: 6px; padding: .6rem; font: .8rem/1.4 ui-monospace,
+                 SFMono-Regular, Menlo, monospace; }
   h1 .muted { color: var(--dim); font-weight: 400; }
   h2 { font-size: .8rem; text-transform: uppercase; letter-spacing: .06em;
        color: var(--dim); margin: 0 0 1rem; font-weight: 600; }
@@ -200,6 +229,14 @@
     .qa .a { padding-left: 0; }
   }
 </style>
+{{end}}
+
+{{define "nav"}}
+<nav class="top">
+  <span class="brand">ask-about</span>
+  <a href="/ask-about/admin" {{if eq . "links"}}class="on"{{end}}>Links</a>
+  <a href="/ask-about/admin/document" {{if eq . "document"}}class="on"{{end}}>Your Document</a>
+</nav>
 {{end}}
 
 {{define "copy"}}

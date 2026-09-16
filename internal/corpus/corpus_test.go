@@ -313,3 +313,52 @@ func TestPartialPronounSetIsRefused(t *testing.T) {
 		t.Errorf("a complete set was refused: %v", err)
 	}
 }
+
+// The four interview prompts differ only in their checklist and the shape of
+// a role entry. The parts that make the output usable as a corpus — how the
+// interview runs, and the rules on figures, dates and inventing nothing — are
+// the same text in each, so a fix to one cannot quietly miss the others.
+func TestInterviewPromptsShareTheirRules(t *testing.T) {
+	files := []string{"interview-ic.md", "interview-senior-ic.md", "interview-manager.md", "interview-executive.md"}
+	section := func(text, from, to string) string {
+		i := strings.Index(text, from)
+		if i < 0 {
+			return ""
+		}
+		if to == "" {
+			return text[i:]
+		}
+		j := strings.Index(text[i:], to)
+		if j < 0 {
+			return text[i:]
+		}
+		return text[i : i+j]
+	}
+	var how, rules, closing string
+	for _, f := range files {
+		b, err := os.ReadFile("../../prompts/" + f)
+		if err != nil {
+			t.Fatalf("read %s: %v", f, err)
+		}
+		text := string(b)
+		h := section(text, "## How this works", "## Rules for what you write")
+		r := section(text, "## Rules for what you write", "## The checklist")
+		c := section(text, "Every section heading stays", "")
+		if h == "" || r == "" || c == "" {
+			t.Fatalf("%s is missing a shared section", f)
+		}
+		if how == "" {
+			how, rules, closing = h, r, c
+			continue
+		}
+		if h != how {
+			t.Errorf("%s: 'How this works' differs from interview-ic.md", f)
+		}
+		if r != rules {
+			t.Errorf("%s: the rules differ from interview-ic.md", f)
+		}
+		if c != closing {
+			t.Errorf("%s: the closing instructions differ from interview-ic.md", f)
+		}
+	}
+}

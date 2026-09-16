@@ -36,15 +36,26 @@ type Config struct {
 
 type Server struct {
 	Addr string `toml:"addr"`
+	// TrustedProxy is the address, or CIDR block, of the reverse proxy in
+	// front of the server. X-Forwarded-For is believed only on connections
+	// from it. Empty means no proxy: the connecting address is the client,
+	// and the header is ignored.
+	TrustedProxy string `toml:"trusted_proxy"`
+}
+
+// TrustedNet parses TrustedProxy. Returns ok=false when none is configured.
+func (s Server) TrustedNet() (netip.Prefix, bool, error) {
+	return parseNet("server.trusted_proxy", s.TrustedProxy)
 }
 
 // Subject is what the corpus is about — a person, or a product. The persona
 // and the page refer to it by name and by pronoun, so both live here rather
 // than being written into either.
 type Subject struct {
-	// Kind is "person" (the default) or "product", which covers a service, a
-	// company, an app — anything that is not a person. It selects the built-in
-	// persona and the default pronouns.
+	// Kind is "person" (the default), "product", or "company". The last two
+	// are the same thing to the code — a subject that is not a person, with
+	// the product persona and it/its — and both are accepted because people
+	// write whichever describes them.
 	Kind string `toml:"kind"`
 	// Name is the whole name of a subject that is not a person. When set it
 	// stands in for firstName and lastName everywhere: {{fullName}} and
@@ -74,17 +85,18 @@ type Subject struct {
 const (
 	KindPerson  = "person"
 	KindProduct = "product"
+	KindCompany = "company"
 )
 
 // IsProduct reports whether the subject is something other than a person.
-func (s Subject) IsProduct() bool { return s.Kind == KindProduct }
+func (s Subject) IsProduct() bool { return s.Kind == KindProduct || s.Kind == KindCompany }
 
 // KindName is the kind with the default spelled out, for logs and messages.
 func (s Subject) KindName() string {
-	if s.IsProduct() {
-		return KindProduct
+	if s.Kind == "" {
+		return KindPerson
 	}
-	return KindPerson
+	return s.Kind
 }
 
 // PersonaFile is the built-in persona for this kind of subject, as a path
@@ -224,6 +236,9 @@ type Storage struct {
 	// Path is the SQLite file. Empty disables persistence entirely — the chat
 	// still works, nothing is recorded.
 	Path string `toml:"path"`
+	// RetainDays is how long questions and answers are kept. Zero, the
+	// default, keeps them forever. Links and contacts are never pruned.
+	RetainDays int `toml:"retain_days"`
 }
 
 // Admin guards the invite pages.
@@ -259,7 +274,13 @@ func (a Admin) Enabled() bool {
 // AllowedNet parses IP into a prefix. A bare address becomes a single-host
 // prefix. Returns ok=false when no restriction is configured.
 func (a Admin) AllowedNet() (netip.Prefix, bool, error) {
-	s := strings.TrimSpace(a.IP)
+	return parseNet("admin.ip", a.IP)
+}
+
+// parseNet reads an address or a CIDR block. A bare address becomes a
+// single-host prefix. Returns ok=false for an empty value.
+func parseNet(field, value string) (netip.Prefix, bool, error) {
+	s := strings.TrimSpace(value)
 	if s == "" {
 		return netip.Prefix{}, false, nil
 	}
@@ -268,7 +289,7 @@ func (a Admin) AllowedNet() (netip.Prefix, bool, error) {
 	}
 	addr, err := netip.ParseAddr(s)
 	if err != nil {
-		return netip.Prefix{}, false, fmt.Errorf("admin.ip %q: not an address or CIDR block", a.IP)
+		return netip.Prefix{}, false, fmt.Errorf("%s %q: not an address or CIDR block", field, value)
 	}
 	return netip.PrefixFrom(addr, addr.BitLen()), true, nil
 }
@@ -570,9 +591,9 @@ func (c Config) validate() error {
 		return fmt.Errorf("llm.base_url is required for vendor bedrock (the regional runtime host)")
 	}
 	switch c.Subject.Kind {
-	case "", KindPerson, KindProduct:
+	case "", KindPerson, KindProduct, KindCompany:
 	default:
-		return fmt.Errorf("subject.kind %q: want person or product", c.Subject.Kind)
+		return fmt.Errorf("subject.kind %q: want person, product, or company", c.Subject.Kind)
 	}
 	if c.Subject.FullName() == "" {
 		return fmt.Errorf("subject has no name: set firstName/lastName, or name for a product")
@@ -591,6 +612,12 @@ func (c Config) validate() error {
 	// refusing every admin request later.
 	if _, _, err := c.Admin.AllowedNet(); err != nil {
 		return err
+	}
+	if _, _, err := c.Server.TrustedNet(); err != nil {
+		return err
+	}
+	if c.Storage.RetainDays < 0 {
+		return fmt.Errorf("storage.retain_days %d: want 0 for forever, or a number of days", c.Storage.RetainDays)
 	}
 	if c.Admin.IP != "" && !c.Admin.Enabled() {
 		return fmt.Errorf("admin.ip is set but admin.username/admin.password are not: admin is disabled")

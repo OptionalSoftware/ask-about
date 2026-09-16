@@ -19,9 +19,9 @@
 
 # What the corpus is about. Substituted into the persona and the page.
 [subject]
-# "product" covers a service, a company, an app — anything that is not a
-# person. It picks the built-in persona and defaults the pronouns to it/its.
-kind = "product"
+# "person", "product", or "company". Product and company behave the same:
+# the product persona, and pronouns default to it/its.
+kind = "company"
 
 # One name. firstName and lastName are for a person; leave them empty.
 name = "Fennwick Harbor Engineering"
@@ -95,13 +95,23 @@ image = ""
 [server]
 addr = ":8283"
 
+# The reverse proxy in front of this, as an address or a CIDR block. The
+# client's address is read from X-Forwarded-For only on connections from it;
+# from anywhere else the connecting address is the client and the header is
+# ignored. The deploy guide puts nginx on the same machine, hence the default.
+# Leave empty if nothing is in front.
+trusted_proxy = "127.0.0.1"
+
 [storage]
 # SQLite file. Empty runs the chat with nothing recorded. The admin pages,
 # invite links and spend caps below all read from it, so setting any of them
 # with this empty is refused at startup rather than half-working.
-# Nothing is ever pruned — questions, answers and token counts are kept
-# indefinitely.
 path = "data/ask-about.db"
+
+# How many days of questions and answers to keep. 0 keeps them forever.
+# Links and contacts are never pruned; the counts and costs on the admin pages
+# cover only what is kept.
+retain_days = 0
 
 # The invite pages at /ask-about/admin. Requires [storage] and both fields below.
 # Setting only some of them fails at startup rather than half-working.
@@ -117,9 +127,10 @@ password = ""
 #   ip = "203.0.113.5"
 #   ip = "203.0.113.0/24"
 #
-# Reads X-Forwarded-For, so it works behind a proxy as well as directly. One
-# of three things a request must get right, not a boundary on its own. A
-# refusal logs the address it decided on, which tells you what to put here.
+# Behind a proxy the client's address comes from X-Forwarded-For, which is
+# believed only from server.trusted_proxy above. One of three things a
+# request must get right, not a boundary on its own. A refusal logs the
+# address it decided on, which tells you what to put here.
 ip = ""
 
 # Wrong passwords an address may try before it is refused for 15 minutes.

@@ -378,7 +378,7 @@ func (s *Server) adminRoutes(mux *http.ServeMux, cfg config.Admin) error {
 	if !cfg.Enabled() || s.store == nil {
 		return nil
 	}
-	auth, err := newAdminAuth(cfg, s.log)
+	auth, err := newAdminAuth(cfg, s.trusted, s.log)
 	if err != nil {
 		return err
 	}
@@ -386,11 +386,13 @@ func (s *Server) adminRoutes(mux *http.ServeMux, cfg config.Admin) error {
 	// wildcard matches every method and so conflicts with the method-scoped
 	// "GET /" that serves the chat page.
 	for pattern, h := range map[string]http.HandlerFunc{
-		"GET " + Base + "/admin":               s.handleAdmin,
-		"GET " + Base + "/admin/links/{id}":    s.handleAdminLink,
-		"POST " + Base + "/admin/links":        s.handleAdminCreate,
-		"POST " + Base + "/admin/links/revoke": s.handleAdminRevoke,
-		"POST " + Base + "/admin/links/{id}":   s.handleAdminUpdate,
+		"GET " + Base + "/admin":                 s.handleAdmin,
+		"GET " + Base + "/admin/document":        s.handleDocument,
+		"GET " + Base + "/admin/document/{slug}": s.handleDocumentPrompt,
+		"GET " + Base + "/admin/links/{id}":      s.handleAdminLink,
+		"POST " + Base + "/admin/links":          s.handleAdminCreate,
+		"POST " + Base + "/admin/links/revoke":   s.handleAdminRevoke,
+		"POST " + Base + "/admin/links/{id}":     s.handleAdminUpdate,
 	} {
 		mux.Handle(pattern, auth.wrap(h))
 	}
